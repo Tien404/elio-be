@@ -1,0 +1,1826 @@
+{
+  "users": {
+    "group": 1,
+    "fields": [
+      {
+        "name": "user_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "email",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "full_name",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "password_hash",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "must_change_pwd",
+        "type": "bool",
+        "nullable": false
+      },
+      {
+        "name": "created_by",
+        "type": "int",
+        "nullable": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "user_id"
+    ],
+    "fk": [
+      "created_by -> admins.user_id"
+    ],
+    "rules": [
+      "UNIQUE email (case-insensitive normalized value)",
+      "UNIQUE (user_id, role)",
+      "role in STUDENT, INSTRUCTOR, ADMIN; status in ACTIVE, LOCKED",
+      "Exactly one matching role subtype, enforced by account service transaction",
+      "Only initial administrator bootstrap permits created_by NULL"
+    ]
+  },
+  "students": {
+    "group": 1,
+    "fields": [
+      {
+        "name": "user_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "student_code",
+        "type": "text",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "user_id"
+    ],
+    "fk": [
+      "(user_id, role) -> users.(user_id, role)"
+    ],
+    "rules": [
+      "UNIQUE student_code; role = STUDENT"
+    ]
+  },
+  "instructors": {
+    "group": 1,
+    "fields": [
+      {
+        "name": "user_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "can_create_course",
+        "type": "bool",
+        "nullable": false
+      },
+      {
+        "name": "department",
+        "type": "text",
+        "nullable": true
+      }
+    ],
+    "pk": [
+      "user_id"
+    ],
+    "fk": [
+      "(user_id, role) -> users.(user_id, role)"
+    ],
+    "rules": [
+      "role = INSTRUCTOR"
+    ]
+  },
+  "admins": {
+    "group": 1,
+    "fields": [
+      {
+        "name": "user_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "user_id"
+    ],
+    "fk": [
+      "(user_id, role) -> users.(user_id, role)"
+    ],
+    "rules": [
+      "role = ADMIN"
+    ]
+  },
+  "user_sessions": {
+    "group": 1,
+    "fields": [
+      {
+        "name": "session_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "user_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "token_hash",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "issued_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "revoked_at",
+        "type": "timestamp",
+        "nullable": true
+      },
+      {
+        "name": "restricted",
+        "type": "bool",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "session_id"
+    ],
+    "fk": [
+      "user_id -> users.user_id"
+    ],
+    "rules": [
+      "UNIQUE token_hash; expires_at > issued_at",
+      "restricted temporary-password sessions permit password change/logout only",
+      "Password change/reset revokes all sessions; ordinary logout revokes current session"
+    ]
+  },
+  "courses": {
+    "group": 2,
+    "fields": [
+      {
+        "name": "course_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "course_code",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "course_name",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "credits",
+        "type": "decimal",
+        "nullable": false
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "nullable": true
+      }
+    ],
+    "pk": [
+      "course_id"
+    ],
+    "fk": [],
+    "rules": [
+      "UNIQUE course_code; credits > 0"
+    ]
+  },
+  "course_offerings": {
+    "group": 2,
+    "fields": [
+      {
+        "name": "offering_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "course_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "semester",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "section_code",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "state",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "join_code",
+        "type": "text",
+        "nullable": true
+      },
+      {
+        "name": "join_code_enabled",
+        "type": "bool",
+        "nullable": false
+      },
+      {
+        "name": "created_by",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "archived_at",
+        "type": "timestamp",
+        "nullable": true
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "offering_id"
+    ],
+    "fk": [
+      "course_id -> courses.course_id",
+      "created_by -> instructors.user_id"
+    ],
+    "rules": [
+      "UNIQUE (course_id, semester, section_code)",
+      "UNIQUE join_code when not NULL; six alphanumeric characters",
+      "state in DRAFT, OPEN, ARCHIVED; join_code_enabled requires a code",
+      "archived_at is non-null exactly while ARCHIVED",
+      "Exactly one primary-instructor membership; active account required in DRAFT/OPEN",
+      "Restoration requires active lead and preserves deadlines/history"
+    ]
+  },
+  "course_memberships": {
+    "group": 2,
+    "fields": [
+      {
+        "name": "membership_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "offering_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "user_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "course_role",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "joined_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "membership_id"
+    ],
+    "fk": [
+      "offering_id -> course_offerings.offering_id",
+      "user_id -> users.user_id"
+    ],
+    "rules": [
+      "UNIQUE (offering_id, user_id)",
+      "UNIQUE offering_id where course_role = PRIMARY_INSTRUCTOR and status = ACTIVE",
+      "Role must match user subtype; student suspension workflow excluded",
+      "Teaching-team removal preserves authorship; service transaction preserves lead existence"
+    ]
+  },
+  "topics": {
+    "group": 2,
+    "fields": [
+      {
+        "name": "topic_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "offering_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "position",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "topic_id"
+    ],
+    "fk": [
+      "offering_id -> course_offerings.offering_id"
+    ],
+    "rules": [
+      "UNIQUE (offering_id, position); UNIQUE (topic_id, offering_id); position > 0"
+    ]
+  },
+  "file_assets": {
+    "group": 2,
+    "fields": [
+      {
+        "name": "file_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "offering_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "uploaded_by",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "purpose",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "assignment_id",
+        "type": "int",
+        "nullable": true
+      },
+      {
+        "name": "file_key",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "file_name",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "mime_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "size_bytes",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "sha256",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "state",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "uploaded_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamp",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "file_id"
+    ],
+    "fk": [
+      "offering_id -> course_offerings.offering_id",
+      "uploaded_by -> users.user_id",
+      "assignment_id -> assignments.activity_id"
+    ],
+    "rules": [
+      "UNIQUE file_key; state in STAGING, ATTACHED, EXPIRED",
+      "purpose in MATERIAL, ASSIGNMENT_ATTACHMENT, SUBMISSION",
+      "1 <= size_bytes <= 50000000 for MATERIAL; otherwise <= 20000000",
+      "SUBMISSION requires assignment_id in the same offering",
+      "expires_at = uploaded_at + 24 hours; expiry applies only to unattached staging",
+      "Any file type; private download with attachment and nosniff; no execution/scanning promise",
+      "Attach only with current authority and matching purpose/owner scope; reuse attached files only within same authorized parent/stream",
+      "Never delete attached confirmed files via staging cleanup"
+    ]
+  },
+  "materials": {
+    "group": 2,
+    "fields": [
+      {
+        "name": "material_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "topic_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "is_mandatory",
+        "type": "bool",
+        "nullable": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "material_id"
+    ],
+    "fk": [
+      "topic_id -> topics.topic_id"
+    ],
+    "rules": [
+      "UNIQUE (material_id, kind); kind in FILE, TEXT, LINK",
+      "Exactly one matching subtype by kind; status in DRAFT, PUBLISHED, ARCHIVED"
+    ]
+  },
+  "file_materials": {
+    "group": 2,
+    "fields": [
+      {
+        "name": "material_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "file_id",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "material_id"
+    ],
+    "fk": [
+      "(material_id, kind) -> materials.(material_id, kind)",
+      "file_id -> file_assets.file_id"
+    ],
+    "rules": [
+      "kind = FILE; one file per material; attached asset purpose MATERIAL and same offering"
+    ]
+  },
+  "text_materials": {
+    "group": 2,
+    "fields": [
+      {
+        "name": "material_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "body",
+        "type": "text",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "material_id"
+    ],
+    "fk": [
+      "(material_id, kind) -> materials.(material_id, kind)"
+    ],
+    "rules": [
+      "kind = TEXT; nonempty body"
+    ]
+  },
+  "link_materials": {
+    "group": 2,
+    "fields": [
+      {
+        "name": "material_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "url",
+        "type": "text",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "material_id"
+    ],
+    "fk": [
+      "(material_id, kind) -> materials.(material_id, kind)"
+    ],
+    "rules": [
+      "kind = LINK; HTTP/HTTPS URL"
+    ]
+  },
+  "material_completions": {
+    "group": 2,
+    "fields": [
+      {
+        "name": "student_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "material_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "completed_at",
+        "type": "timestamp",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "student_id",
+      "material_id"
+    ],
+    "fk": [
+      "student_id -> students.user_id",
+      "material_id -> materials.material_id"
+    ],
+    "rules": []
+  },
+  "activities": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "activity_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "offering_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "topic_id",
+        "type": "int",
+        "nullable": true
+      },
+      {
+        "name": "activity_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "max_score",
+        "type": "decimal",
+        "nullable": false
+      },
+      {
+        "name": "weight_pct",
+        "type": "decimal",
+        "nullable": false
+      },
+      {
+        "name": "is_mandatory",
+        "type": "bool",
+        "nullable": false
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "activity_id"
+    ],
+    "fk": [
+      "offering_id -> course_offerings.offering_id",
+      "(topic_id, offering_id) -> topics.(topic_id, offering_id)"
+    ],
+    "rules": [
+      "UNIQUE (activity_id, activity_type); max_score > 0; 0 <= weight_pct <= 100",
+      "Exactly one matching ASSIGNMENT/QUIZ subtype",
+      "Optional topic is in same offering; preserve assessments if topic organization changes",
+      "Gradebook final total requires all applicable published results and total weight 100; provisional contribution is not normalized"
+    ]
+  },
+  "assignments": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "activity_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "activity_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "instructions",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "open_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "due_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "cutoff_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "is_group_work",
+        "type": "bool",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "activity_id"
+    ],
+    "fk": [
+      "(activity_id, activity_type) -> activities.(activity_id, activity_type)"
+    ],
+    "rules": [
+      "activity_type = ASSIGNMENT; open_at <= due_at <= cutoff_at",
+      "Mode locks at publication; published due/cutoff may extend only before any saved grade/zero",
+      "New confirmation requires OPEN offering, PUBLISHED assignment and open_at <= DB time <= cutoff_at",
+      "Grading requires DB time > cutoff_at; no graded-work reopening"
+    ]
+  },
+  "quizzes": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "activity_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "activity_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "open_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "close_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "duration_min",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "published_at",
+        "type": "timestamp",
+        "nullable": true
+      }
+    ],
+    "pk": [
+      "activity_id"
+    ],
+    "fk": [
+      "(activity_id, activity_type) -> activities.(activity_id, activity_type)"
+    ],
+    "rules": [
+      "activity_type = QUIZ; open_at < close_at; duration_min > 0",
+      "Duration <= availability window; timing locks on first attempt",
+      "Publication copies questions/options/keys/explanations/points atomically; max_score = sum(snapshot points)",
+      "No manual quiz-score override or regrading"
+    ]
+  },
+  "assignment_attachments": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "assignment_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "attachment_no",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "file_id",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "assignment_id",
+      "attachment_no"
+    ],
+    "fk": [
+      "assignment_id -> assignments.activity_id",
+      "file_id -> file_assets.file_id"
+    ],
+    "rules": [
+      "attachment_no between 1 and 5; purpose ASSIGNMENT_ATTACHMENT; same offering"
+    ]
+  },
+  "assignment_groups": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "group_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "assignment_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "group_id"
+    ],
+    "fk": [
+      "assignment_id -> assignments.activity_id"
+    ],
+    "rules": [
+      "UNIQUE (group_id, assignment_id); UNIQUE (assignment_id, name)",
+      "Only group-mode assignments; freeze independently per group"
+    ]
+  },
+  "group_members": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "group_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "assignment_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "student_id",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "group_id",
+      "student_id"
+    ],
+    "fk": [
+      "(group_id, assignment_id) -> assignment_groups.(group_id, assignment_id)",
+      "student_id -> students.user_id"
+    ],
+    "rules": [
+      "UNIQUE (assignment_id, student_id)",
+      "Student must belong to offering; locked accounts retain allocation and grade entitlement",
+      "Group recipient edits stop at first confirmation or confirmed reasoned missing-work zero"
+    ]
+  },
+  "submissions": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "submission_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "assignment_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "owner_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "student_id",
+        "type": "int",
+        "nullable": true
+      },
+      {
+        "name": "group_id",
+        "type": "int",
+        "nullable": true
+      },
+      {
+        "name": "roster_frozen_at",
+        "type": "timestamp",
+        "nullable": true
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "submission_id"
+    ],
+    "fk": [
+      "assignment_id -> assignments.activity_id",
+      "student_id -> students.user_id",
+      "(group_id, assignment_id) -> assignment_groups.(group_id, assignment_id)"
+    ],
+    "rules": [
+      "UNIQUE (assignment_id, student_id) when student_id not NULL; UNIQUE group_id when not NULL",
+      "Exactly one owner: INDIVIDUAL/student_id or GROUP/group_id",
+      "status in NOT_SUBMITTED, SUBMITTED; no confirmed versions for missing-work zero container",
+      "version is accepted stream version count, initially 0; versions are immutable",
+      "Snapshot all assigned group members, including locked accounts, on first confirmation or reasoned zero; access checks remain current"
+    ]
+  },
+  "submission_roster": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "submission_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "student_id",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "submission_id",
+      "student_id"
+    ],
+    "fk": [
+      "submission_id -> submissions.submission_id",
+      "student_id -> students.user_id"
+    ],
+    "rules": [
+      "Immutable frozen group recipients; individual recipient is submissions.student_id"
+    ]
+  },
+  "submission_versions": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "submission_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "version_no",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "submitted_by",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "submitted_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "is_late",
+        "type": "bool",
+        "nullable": false
+      },
+      {
+        "name": "receipt_code",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "request_key",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "request_hash",
+        "type": "text",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "submission_id",
+      "version_no"
+    ],
+    "fk": [
+      "submission_id -> submissions.submission_id",
+      "submitted_by -> students.user_id"
+    ],
+    "rules": [
+      "UNIQUE receipt_code; UNIQUE (submitted_by, request_key); version_no > 0",
+      "Same actor/key/payload returns original version receipt after access check, even after cutoff",
+      "Changed payload under same actor/key returns 409; append and request key persist atomically",
+      "request_hash is SHA-256 of canonical assignment/owner/expectedVersion/fileIds; retry uses identical payload",
+      "is_late = submitted_at > due_at at acceptance; preserve receipt facts after extensions",
+      "One to five files; acknowledge only durable bytes; uploader/file scope rechecked"
+    ]
+  },
+  "submission_files": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "submission_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "version_no",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "file_no",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "file_id",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "submission_id",
+      "version_no",
+      "file_no"
+    ],
+    "fk": [
+      "(submission_id, version_no) -> submission_versions.(submission_id, version_no)",
+      "file_id -> file_assets.file_id"
+    ],
+    "rules": [
+      "file_no between 1 and 5; UNIQUE (submission_id, version_no, file_id)",
+      "Asset purpose SUBMISSION and matching assignment/owner scope; no text submissions"
+    ]
+  },
+  "grades": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "grade_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "submission_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "draft_revision_no",
+        "type": "int",
+        "nullable": true
+      },
+      {
+        "name": "published_revision_no",
+        "type": "int",
+        "nullable": true
+      },
+      {
+        "name": "published_at",
+        "type": "timestamp",
+        "nullable": true
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "grade_id"
+    ],
+    "fk": [
+      "submission_id -> submissions.submission_id",
+      "(grade_id, draft_revision_no) -> grade_revisions.(grade_id, revision_no)",
+      "(grade_id, published_revision_no) -> grade_revisions.(grade_id, revision_no)"
+    ],
+    "rules": [
+      "UNIQUE submission_id; UNIQUE (grade_id, submission_id)",
+      "Revision-pointer FKs may be deferred within grade-save transaction",
+      "Published pointer/timestamp are both NULL or both non-NULL",
+      "Assignment grades only; quiz scores remain in quiz_attempts",
+      "Edited draft retains previous published pointer until explicit republication"
+    ]
+  },
+  "grade_revisions": {
+    "group": 3,
+    "fields": [
+      {
+        "name": "grade_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "revision_no",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "submission_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "source_version_no",
+        "type": "int",
+        "nullable": true
+      },
+      {
+        "name": "score",
+        "type": "decimal",
+        "nullable": false
+      },
+      {
+        "name": "feedback",
+        "type": "text",
+        "nullable": true
+      },
+      {
+        "name": "is_missing_zero",
+        "type": "bool",
+        "nullable": false
+      },
+      {
+        "name": "zero_reason",
+        "type": "text",
+        "nullable": true
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "nullable": true
+      },
+      {
+        "name": "revised_by",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "revised_at",
+        "type": "timestamp",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "grade_id",
+      "revision_no"
+    ],
+    "fk": [
+      "(grade_id, submission_id) -> grades.(grade_id, submission_id)",
+      "(submission_id, source_version_no) -> submission_versions.(submission_id, version_no)",
+      "revised_by -> instructors.user_id"
+    ],
+    "rules": [
+      "revision_no > 0; score between 0 and activity maximum; immutable complete revision",
+      "Missing zero requires score=0, reasoned zero_reason, source_version_no NULL and no confirmed versions",
+      "Ordinary grading requires effective latest confirmed source_version_no",
+      "Post-publication edits require nonempty reason; first grade does not require correction reason",
+      "Save/publish only after cutoff and while offering OPEN; grading and deadline edits lock assignment first"
+    ]
+  },
+  "question_banks": {
+    "group": 4,
+    "fields": [
+      {
+        "name": "bank_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "offering_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "bank_id"
+    ],
+    "fk": [
+      "offering_id -> course_offerings.offering_id"
+    ],
+    "rules": []
+  },
+  "questions": {
+    "group": 4,
+    "fields": [
+      {
+        "name": "question_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "bank_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "question_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "question_text",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "points",
+        "type": "decimal",
+        "nullable": false
+      },
+      {
+        "name": "tf_correct_answer",
+        "type": "bool",
+        "nullable": true
+      },
+      {
+        "name": "explanation",
+        "type": "text",
+        "nullable": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "question_id"
+    ],
+    "fk": [
+      "bank_id -> question_banks.bank_id"
+    ],
+    "rules": [
+      "UNIQUE (question_id, question_type); points > 0",
+      "Type in SINGLE_CHOICE, TRUE_FALSE; true/false requires tf_correct_answer; single-choice uses options",
+      "Bank editing allowed; never changes published copies"
+    ]
+  },
+  "question_options": {
+    "group": 4,
+    "fields": [
+      {
+        "name": "question_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "question_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "option_no",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "option_text",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "is_correct",
+        "type": "bool",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "question_id",
+      "option_no"
+    ],
+    "fk": [
+      "(question_id, question_type) -> questions.(question_id, question_type)"
+    ],
+    "rules": [
+      "question_type = SINGLE_CHOICE; option_no > 0",
+      "At most one correct via partial UNIQUE question_id; service validates exactly one and at least two options"
+    ]
+  },
+  "quiz_questions": {
+    "group": 4,
+    "fields": [
+      {
+        "name": "quiz_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "question_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "position",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "points",
+        "type": "decimal",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "quiz_id",
+      "question_id"
+    ],
+    "fk": [
+      "quiz_id -> quizzes.activity_id",
+      "question_id -> questions.question_id"
+    ],
+    "rules": [
+      "UNIQUE (quiz_id, position); position > 0; points > 0",
+      "Draft selection only; same-offering bank; quiz-specific points override bank suggestion"
+    ]
+  },
+  "quiz_snapshot_questions": {
+    "group": 4,
+    "fields": [
+      {
+        "name": "quiz_question_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "quiz_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "source_question_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "position",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "question_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "prompt",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "correct_key",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "explanation",
+        "type": "text",
+        "nullable": true
+      },
+      {
+        "name": "points",
+        "type": "decimal",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "quiz_question_id"
+    ],
+    "fk": [
+      "quiz_id -> quizzes.activity_id",
+      "source_question_id -> questions.question_id"
+    ],
+    "rules": [
+      "UNIQUE (quiz_id, quiz_question_id); UNIQUE (quiz_id, position); points > 0",
+      "Immutable publication-time copy; correct_key belongs to copied options (service validation)",
+      "Source bank rows referenced for provenance, not grading; do not hard-delete referenced questions"
+    ]
+  },
+  "quiz_snapshot_options": {
+    "group": 4,
+    "fields": [
+      {
+        "name": "quiz_question_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "option_key",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "option_text",
+        "type": "text",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "quiz_question_id",
+      "option_key"
+    ],
+    "fk": [
+      "quiz_question_id -> quiz_snapshot_questions.quiz_question_id"
+    ],
+    "rules": [
+      "Immutable copied choices; true/false keys are true and false; single-choice keys are stringified option numbers"
+    ]
+  },
+  "quiz_attempts": {
+    "group": 4,
+    "fields": [
+      {
+        "name": "attempt_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "quiz_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "student_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "started_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "ends_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "submitted_at",
+        "type": "timestamp",
+        "nullable": true
+      },
+      {
+        "name": "finalized_by",
+        "type": "text",
+        "nullable": true
+      },
+      {
+        "name": "score",
+        "type": "decimal",
+        "nullable": true
+      },
+      {
+        "name": "released_at",
+        "type": "timestamp",
+        "nullable": true
+      },
+      {
+        "name": "processing_error",
+        "type": "text",
+        "nullable": true
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "attempt_id"
+    ],
+    "fk": [
+      "quiz_id -> quizzes.activity_id",
+      "student_id -> students.user_id"
+    ],
+    "rules": [
+      "UNIQUE (quiz_id, student_id); UNIQUE (attempt_id, quiz_id)",
+      "ends_at = min(close_at, started_at + duration); ends_at > started_at",
+      "Start only open_at <= DB time < close_at; one attempt, refresh resumes",
+      "Finalize once under row lock from durable answers; retain explicit processing error for retries",
+      "Automatic score in 0..sum(snapshot points); no assignment Grade relation or manual correction",
+      "Release automatically after close + successful finalization + OPEN offering; released_at retains release across later archive",
+      "Version increments on accepted answer save/seal; attempt-wide save queue and If-Match"
+    ]
+  },
+  "attempt_answers": {
+    "group": 4,
+    "fields": [
+      {
+        "name": "attempt_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "quiz_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "quiz_question_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "selected_key",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "saved_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "is_correct",
+        "type": "bool",
+        "nullable": true
+      }
+    ],
+    "pk": [
+      "attempt_id",
+      "quiz_question_id"
+    ],
+    "fk": [
+      "(attempt_id, quiz_id) -> quiz_attempts.(attempt_id, quiz_id)",
+      "(quiz_id, quiz_question_id) -> quiz_snapshot_questions.(quiz_id, quiz_question_id)",
+      "(quiz_question_id, selected_key) -> quiz_snapshot_options.(quiz_question_id, option_key)"
+    ],
+    "rules": [
+      "Save only active owner with current offering access, expected version, DB time < ends_at and unsealed attempt",
+      "Seal and save serialize on attempt lock; grade from copied correct_key only"
+    ]
+  },
+  "announcements": {
+    "group": 5,
+    "fields": [
+      {
+        "name": "announcement_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "offering_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "author_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "body",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "published_at",
+        "type": "timestamp",
+        "nullable": true
+      },
+      {
+        "name": "version",
+        "type": "int",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "announcement_id"
+    ],
+    "fk": [
+      "offering_id -> course_offerings.offering_id",
+      "author_id -> users.user_id"
+    ],
+    "rules": []
+  },
+  "notifications": {
+    "group": 5,
+    "fields": [
+      {
+        "name": "notification_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "recipient_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "actor_id",
+        "type": "int",
+        "nullable": true
+      },
+      {
+        "name": "offering_id",
+        "type": "int",
+        "nullable": true
+      },
+      {
+        "name": "event_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "message",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "target_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "target_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp",
+        "nullable": false
+      },
+      {
+        "name": "is_read",
+        "type": "bool",
+        "nullable": false
+      },
+      {
+        "name": "event_key",
+        "type": "text",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "notification_id"
+    ],
+    "fk": [
+      "recipient_id -> users.user_id",
+      "actor_id -> users.user_id",
+      "offering_id -> course_offerings.offering_id"
+    ],
+    "rules": [
+      "UNIQUE (recipient_id, event_key); exclude actor from audience",
+      "Persist safe notification with academic transaction; retry separately without exposing private grades/answers"
+    ]
+  },
+  "audit_entries": {
+    "group": 5,
+    "fields": [
+      {
+        "name": "audit_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "actor_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "action_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "target_type",
+        "type": "text",
+        "nullable": false
+      },
+      {
+        "name": "target_id",
+        "type": "int",
+        "nullable": false
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "nullable": true
+      },
+      {
+        "name": "details",
+        "type": "json",
+        "nullable": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp",
+        "nullable": false
+      }
+    ],
+    "pk": [
+      "audit_id"
+    ],
+    "fk": [
+      "actor_id -> users.user_id"
+    ],
+    "rules": [
+      "Append-only application/runtime privileges; no cryptographic tamper-evidence claim",
+      "Operational payload excludes passwords, session secrets, submission content and private scores/feedback; grade history is separately authorized"
+    ]
+  }
+}
