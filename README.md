@@ -40,6 +40,19 @@ python -m scripts.check_database
 
 Check chỉ đọc, exit0 khi kết nối/check thành công; exit1 khi chưa sẵn sàng. Không tự tạo schema.
 
+## Schema (T-SQL)
+
+Scripts trong `sql/migrations/` (000–005, 38 bảng theo [logical model](app/contracts/logical-model.json)), mỗi file một transaction, chạy lại an toàn (ghi vào `dbo.schema_migrations`).
+
+```powershell
+# Windows login, instance mặc định -> tạo elio_dev rồi áp dụng migrations
+powershell -ExecutionPolicy Bypass -File sql/apply_migrations.ps1
+# SQL login / server khác
+powershell -ExecutionPolicy Bypass -File sql/apply_migrations.ps1 -Server "tcp:HOST,1433" -Database elio_dev -User YOUR_DDL_USER
+# Smoke test (rollback, không để lại dữ liệu)
+sqlcmd -S localhost -E -C -I -b -d elio_dev -i sql/tests/smoke_test.sql
+```
+
 ## Kiểm tra
 
 ```sh
