@@ -5,12 +5,18 @@ from fastapi import APIRouter, Path, Query, Response
 from app.api.dependencies import (
     ActorDep,
     AuthServiceDep,
-    CatalogServiceDep,
+    CourseServiceDep,
     MutationActorDep,
     VersionDep,
     set_etag,
 )
-from app.api.schemas.catalog import CatalogCourse, CreateCatalogCourseRequest
+from app.api.schemas.catalog import (
+    CatalogCourse,
+    CreateCatalogCourseRequest,
+    Registration,
+    RegistrationPage,
+    ReviewRegistrationRequest,
+)
 from app.api.schemas.common import ActionResult
 from app.api.schemas.identity import (
     AccountPage,
@@ -55,7 +61,7 @@ def admin_list_accounts(
 def admin_create_account(
     body: CreateAccountRequest, actor: MutationActorDep, response: Response, service: AuthServiceDep
 ):
-    view = service.admin_create_account(
+    view = service.create_account(
         actor=actor,
         email=body.email,
         display_name=body.displayName,
@@ -83,7 +89,7 @@ def admin_update_account(
     response: Response,
     service: AuthServiceDep,
 ):
-    view = service.admin_update_account(
+    view = service.update_account(
         actor=actor,
         account_id=account_id,
         expected_version=version,
@@ -104,16 +110,50 @@ def admin_update_account(
     responses={409: {"description": "COURSE_CODE_EXHAUSTED"}},
 )
 def admin_create_catalog_course(
-    body: CreateCatalogCourseRequest, actor: MutationActorDep, service: CatalogServiceDep
+    body: CreateCatalogCourseRequest, actor: MutationActorDep, service: CourseServiceDep
 ):
-    return service.admin_create_course(
+    return service.create_course(
         actor=actor,
-        faculty_code=body.facultyCode,
-        year_level=body.yearLevel,
-        degree_level=body.degreeLevel,
-        course_name=body.courseName,
+        faculty=body.facultyCode,
+        year=body.yearLevel,
+        degree=body.degreeLevel,
+        name=body.courseName,
         credits=body.credits,
         description=body.description,
+    )
+
+
+@router.get(
+    "/admin/registrations",
+    operation_id="adminListRegistrations",
+    response_model=RegistrationPage,
+    summary="Course requests to review, oldest first (filter status=PENDING).",
+)
+def admin_list_registrations(
+    actor: ActorDep,
+    service: CourseServiceDep,
+    status: Literal["PENDING", "APPROVED", "REJECTED"] | None = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    pageSize: Annotated[int, Query(ge=1, le=100)] = 25,
+):
+    return service.list_registrations(actor=actor, status=status, page=page, page_size=pageSize)
+
+
+@router.post(
+    "/admin/registrations/{registrationId}/decision",
+    operation_id="adminReviewRegistration",
+    response_model=Registration,
+    summary="Approve or reject a PENDING course request.",
+    responses={409: {"description": "REGISTRATION_ALREADY_DECIDED"}},
+)
+def admin_review_registration(
+    registration_id: Annotated[int, Path(alias="registrationId", ge=1, le=2147483647)],
+    body: ReviewRegistrationRequest,
+    actor: MutationActorDep,
+    service: CourseServiceDep,
+):
+    return service.review_registration(
+        actor=actor, registration_id=registration_id, approve=body.approve
     )
 
 
@@ -138,4 +178,4 @@ def admin_reset_password(
     actor: MutationActorDep,
     service: AuthServiceDep,
 ):
-    return service.admin_reset_password(actor=actor, account_id=account_id, reason=body.reason)
+    return service.reset_password(actor=actor, account_id=account_id, reason=body.reason)

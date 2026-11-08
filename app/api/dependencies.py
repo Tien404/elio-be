@@ -12,8 +12,11 @@ from app.core.config import Settings
 from app.core.errors import ApiError
 from app.core.security import csrf_matches
 from app.domain.context import Actor, SessionContext
+from app.infrastructure.file_storage import FileStorage
 from app.services.auth_service import AuthService
-from app.services.catalog_service import CatalogService
+from app.services.content_service import ContentService
+from app.services.course_service import CourseService
+from app.services.submission_service import SubmissionService
 
 
 def get_settings(request: Request) -> Settings:
@@ -24,8 +27,18 @@ def get_auth_service(request: Request) -> AuthService:
     return AuthService(request.app.state.database, request.app.state.settings)
 
 
-def get_catalog_service(request: Request) -> CatalogService:
-    return CatalogService(request.app.state.database)
+def get_content_service(request: Request) -> ContentService:
+    settings: Settings = request.app.state.settings
+    return ContentService(request.app.state.database, FileStorage(settings.private_files_dir))
+
+
+def get_submission_service(request: Request) -> SubmissionService:
+    settings: Settings = request.app.state.settings
+    return SubmissionService(request.app.state.database, FileStorage(settings.private_files_dir))
+
+
+def get_course_service(request: Request) -> CourseService:
+    return CourseService(request.app.state.database)
 
 
 def _resolve(request: Request) -> SessionContext:
@@ -131,7 +144,9 @@ def clear_session_cookie(response: Response, settings: Settings) -> None:
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
-CatalogServiceDep = Annotated[CatalogService, Depends(get_catalog_service)]
+CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]
+ContentServiceDep = Annotated[ContentService, Depends(get_content_service)]
+SubmissionServiceDep = Annotated[SubmissionService, Depends(get_submission_service)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 ActorDep = Annotated[Actor, Depends(current_actor)]
 MutationActorDep = Annotated[Actor, Depends(mutation_actor)]

@@ -1,34 +1,99 @@
+"""Entity classes from the MVP class diagram (docs: ELIO_Class_Diagram_MVP.drawio).
+
+Diagram names are camelCase (hasRole, makeCode); Python uses snake_case (has_role,
+make_code). Enum values are the database values. Entities hold rules about a single
+object; services load them through repositories, call these methods and save the result.
+Mapping between database rows and entities lives in the repositories.
+"""
+
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
-from app.core.errors import FeatureNotImplemented
+from app.core.errors import conflict
+
+# =========================================================== page 1: accounts & courses
 
 
-class SystemRole(str, Enum):
+class SystemRole(StrEnum):
     STUDENT = "STUDENT"
     INSTRUCTOR = "INSTRUCTOR"
     ADMIN = "ADMIN"
 
 
+class AccountStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    LOCKED = "LOCKED"
+
+
+class DegreeLevel(StrEnum):
+    UNDERGRADUATE = "UNDERGRADUATE"
+    MASTERS = "MASTERS"
+    PHD = "PHD"
+
+
+class RegistrationStatus(StrEnum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class CourseState(StrEnum):
+    DRAFT = "DRAFT"
+    OPEN = "OPEN"
+    ARCHIVED = "ARCHIVED"
+
+
+class CourseRole(StrEnum):
+    STUDENT = "STUDENT"
+    PRIMARY_INSTRUCTOR = "PRIMARY_INSTRUCTOR"
+
+
+class MembershipStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    REMOVED = "REMOVED"
+
+
 @dataclass
 class User:
     user_id: int
-    full_name: str
     email: str
+    full_name: str
+    password_hash: str
     role: SystemRole
-    status: str
+    status: AccountStatus
     must_change_password: bool
 
-    def is_active(self, **kwargs: object):
-        raise FeatureNotImplemented("User.is_active")
+    def has_role(self, role: SystemRole) -> bool:
+        return self.role == role
 
-    def lock(self, **kwargs: object):
-        raise FeatureNotImplemented("User.lock")
+    def is_active(self) -> bool:
+        return self.status == AccountStatus.ACTIVE
 
-    def unlock(self, **kwargs: object):
-        raise FeatureNotImplemented("User.unlock")
+
+@dataclass
+class Student(User):
+    student_code: str
+
+
+@dataclass
+class Instructor(User):
+    can_create_course: bool
+
+
+@dataclass
+class Admin(User):
+    pass
+
+
+_FACULTY = re.compile(r"^[A-Z]{2,4}$")
+_DEGREE_DIGIT = {
+    DegreeLevel.UNDERGRADUATE: 0,
+    DegreeLevel.MASTERS: 1,
+    DegreeLevel.PHD: 2,
+}
 
 
 @dataclass
@@ -37,9 +102,49 @@ class Course:
     course_code: str
     course_name: str
     credits: Decimal
+    description: str | None = None
 
-    def update_details(self, **kwargs: object):
-        raise FeatureNotImplemented("Course.update_details")
+    MAX_NUMBER = 99
+
+    @staticmethod
+    def code_stem(faculty: str, year: int, degree: DegreeLevel) -> str:
+        """Code without the course number: CS + 1 + 0 -> 'CS10'."""
+        faculty = faculty.upper()
+        if not _FACULTY.match(faculty):
+            raise ValueError("faculty must be 2-4 letters")
+        if not 1 <= year <= 9:
+            raise ValueError("year must be 1-9")
+        return f"{faculty}{year}{_DEGREE_DIGIT[DegreeLevel(degree)]}"
+
+    @staticmethod
+    def make_code(faculty: str, year: int, degree: DegreeLevel, number: int) -> str:
+        """CS, 1, UNDERGRADUATE, 1 -> 'CS1001'."""
+        if not 1 <= number <= Course.MAX_NUMBER:
+            raise ValueError("course number must be 1-99")
+        return f"{Course.code_stem(faculty, year, degree)}{number:02d}"
+
+
+@dataclass
+class CourseRegistration:
+    registration_id: int
+    course_id: int
+    student_id: int
+    status: RegistrationStatus
+    requested_at: datetime
+    decided_by: int | None = None
+    decided_at: datetime | None = None
+
+    def approve(self, admin_id: int) -> None:
+        self._decide(admin_id, RegistrationStatus.APPROVED)
+
+    def reject(self, admin_id: int) -> None:
+        self._decide(admin_id, RegistrationStatus.REJECTED)
+
+    def _decide(self, admin_id: int, status: RegistrationStatus) -> None:
+        if self.status != RegistrationStatus.PENDING:
+            raise conflict("REGISTRATION_ALREADY_DECIDED", "This request was already decided.")
+        self.status = status
+        self.decided_by = admin_id  # decided_at is set by the database clock
 
 
 @dataclass
@@ -48,17 +153,12 @@ class CourseOffering:
     course_id: int
     semester: str
     section_code: str
-    state: str
-    version: int
+    title: str
+    state: CourseState
+    version: int = 1
 
-    def publish(self, **kwargs: object):
-        raise FeatureNotImplemented("CourseOffering.publish")
-
-    def archive(self, **kwargs: object):
-        raise FeatureNotImplemented("CourseOffering.archive")
-
-    def restore(self, **kwargs: object):
-        raise FeatureNotImplemented("CourseOffering.restore")
+    def is_open(self) -> bool:
+        return self.state == CourseState.OPEN
 
 
 @dataclass
@@ -66,12 +166,26 @@ class CourseMembership:
     membership_id: int
     offering_id: int
     user_id: int
-    course_role: str
-    status: str
-    version: int
+    course_role: CourseRole
+    status: MembershipStatus
+    joined_at: datetime
+    version: int = 1
 
-    def is_active(self, **kwargs: object):
-        raise FeatureNotImplemented("CourseMembership.is_active")
+    def is_active(self) -> bool:
+        return self.status == MembershipStatus.ACTIVE
+
+
+# ============================================= page 2: materials, submissions & grading
+
+
+class MaterialKind(StrEnum):
+    FILE = "FILE"
+    LINK = "LINK"
+
+
+class PublishStatus(StrEnum):
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
 
 
 @dataclass
@@ -80,9 +194,19 @@ class Topic:
     offering_id: int
     title: str
     position: int
+    version: int = 1
 
-    def rename(self, **kwargs: object):
-        raise FeatureNotImplemented("Topic.rename")
+
+@dataclass
+class FileAsset:
+    """Metadata of a stored file; the bytes live in FileStorage under storage_key."""
+
+    file_id: int
+    file_name: str
+    mime_type: str
+    size_bytes: int
+    sha256: str
+    storage_key: str
 
 
 @dataclass
@@ -90,174 +214,62 @@ class Material:
     material_id: int
     topic_id: int
     title: str
-    kind: str
-    status: str
-    is_mandatory: bool
+    kind: MaterialKind
+    status: PublishStatus
+    url: str | None = None  # LINK
+    file: FileAsset | None = None  # FILE
+    version: int = 1
 
-    def publish(self, **kwargs: object):
-        raise FeatureNotImplemented("Material.publish")
+    def publish(self) -> None:
+        self.status = PublishStatus.PUBLISHED
 
 
 @dataclass
 class Assignment:
+    """A submission box; the instructions are posted as a Material."""
+
     assignment_id: int
     offering_id: int
-    topic_id: int | None
-    open_at: datetime
+    topic_id: int
+    title: str
     due_at: datetime
-    cutoff_at: datetime
     max_score: Decimal
-    is_group_work: bool
+    status: PublishStatus
+    instructions: str | None = None
+    version: int = 1
 
-    def is_open(self, **kwargs: object):
-        raise FeatureNotImplemented("Assignment.is_open")
+    def is_open(self) -> bool:
+        """Accepts submissions once published; late work is still accepted (marked late)."""
+        return self.status == PublishStatus.PUBLISHED
 
-    def is_late(self, **kwargs: object):
-        raise FeatureNotImplemented("Assignment.is_late")
+    def is_late(self, at: datetime) -> bool:
+        return at > self.due_at
 
-    def publish(self, **kwargs: object):
-        raise FeatureNotImplemented("Assignment.publish")
-
-
-@dataclass
-class AssignmentGroup:
-    group_id: int
-    assignment_id: int
-    version: int
-    member_ids: list[int] = field(default_factory=list)
-
-    def add_member(self, **kwargs: object):
-        raise FeatureNotImplemented("AssignmentGroup.add_member")
-
-
-@dataclass
-class FileAsset:
-    file_id: int
-    offering_id: int
-    uploaded_by: int
-    purpose: str
-    state: str
-    expires_at: datetime
-    private_key: str
+    def publish(self) -> None:
+        self.status = PublishStatus.PUBLISHED
 
 
 @dataclass
 class Submission:
     submission_id: int
     assignment_id: int
-    owner_type: str
-    student_id: int | None
-    group_id: int | None
-    status: str
+    student_id: int
     version: int
-    frozen_member_ids: list[int] = field(default_factory=list)
-
-    def latest_version(self, **kwargs: object):
-        raise FeatureNotImplemented("Submission.latest_version")
-
-
-@dataclass(frozen=True)
-class SubmissionVersion:
-    submission_id: int
-    version_no: int
-    submitted_by: int
     submitted_at: datetime
-    receipt_code: str
-    request_key: str
-    request_hash: str
-    file_ids: tuple[int, ...]
+    late: bool
+    files: list[FileAsset] = field(default_factory=list)
+
+    MAX_FILES = 5
 
 
 @dataclass
 class Grade:
     grade_id: int
     submission_id: int
-    version: int
-    draft_revision_no: int | None = None
-    published_revision_no: int | None = None
-
-    def revise(self, **kwargs: object):
-        raise FeatureNotImplemented("Grade.revise")
-
-    def publish(self, **kwargs: object):
-        raise FeatureNotImplemented("Grade.publish")
-
-
-@dataclass(frozen=True)
-class GradeRevision:
-    grade_id: int
-    revision_no: int
-    source_version_no: int | None
     score: Decimal
-    feedback: str | None
-    is_missing_zero: bool
-    reason: str | None
+    status: PublishStatus
+    feedback: str | None = None
+    published_at: datetime | None = None
 
-
-@dataclass
-class Quiz:
-    quiz_id: int
-    offering_id: int
-    open_at: datetime
-    close_at: datetime
-    duration_minutes: int
-    max_score: Decimal
-
-    def is_open(self, **kwargs: object):
-        raise FeatureNotImplemented("Quiz.is_open")
-
-    def publish(self, **kwargs: object):
-        raise FeatureNotImplemented("Quiz.publish")
-
-
-@dataclass
-class Question:
-    question_id: int
-    prompt: str
-    kind: str
-    points: Decimal
-
-    def check_answer(self, **kwargs: object):
-        raise FeatureNotImplemented("Question.check_answer")
-
-
-@dataclass(frozen=True)
-class QuizSnapshotQuestion:
-    quiz_question_id: int
-    quiz_id: int
-    source_question_id: int
-    prompt: str
-    correct_key: str
-    explanation: str | None
-    points: Decimal
-
-
-@dataclass
-class QuizAttempt:
-    attempt_id: int
-    quiz_id: int
-    student_id: int
-    ends_at: datetime
-    version: int
-    score: Decimal | None = None
-    released_at: datetime | None = None
-
-    def save_answer(self, **kwargs: object):
-        raise FeatureNotImplemented("QuizAttempt.save_answer")
-
-    def seal(self, **kwargs: object):
-        raise FeatureNotImplemented("QuizAttempt.seal")
-
-    def finalize_saved_answers(self, **kwargs: object):
-        raise FeatureNotImplemented("QuizAttempt.finalize_saved_answers")
-
-
-@dataclass
-class Notification:
-    notification_id: int
-    recipient_id: int
-    event_key: str
-    is_read: bool
-
-    def mark_read(self, **kwargs: object):
-        raise FeatureNotImplemented("Notification.mark_read")
+    def publish(self) -> None:
+        self.status = PublishStatus.PUBLISHED  # published_at is set by the database clock

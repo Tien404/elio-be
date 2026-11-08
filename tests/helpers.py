@@ -96,3 +96,46 @@ def create_user(
     )
     assert changed.status_code == 200, changed.text
     return login(api, email, password)
+
+
+@dataclass
+class ClassSetup:
+    admin: Session
+    prof: Session
+    student: Session
+    outsider: Session
+    offering_id: int
+
+
+def class_with_student(api: TestClient) -> ClassSetup:
+    """Course CS1001, one class taught by prof@, stu@ enrolled, out@ (student) not enrolled."""
+    admin = bootstrap_admin(api)
+    prof = create_user(api, admin, "prof@elio.test", "INSTRUCTOR", name="Prof")
+    student = create_user(api, admin, "stu@elio.test", "STUDENT", name="Stu")
+    outsider = create_user(api, admin, "out@elio.test", "STUDENT", name="Out")
+    course = admin.post(
+        "/api/v1/admin/courses",
+        json={
+            "facultyCode": "CS",
+            "yearLevel": 1,
+            "degreeLevel": "UNDERGRADUATE",
+            "courseName": "Intro to Programming",
+            "credits": 3,
+        },
+    ).json()
+    offering = admin.post(
+        "/api/v1/offerings",
+        json={
+            "courseCode": course["courseCode"],
+            "semester": "2026-1",
+            "title": "CS1001 Morning",
+            "instructorEmail": "prof@elio.test",
+        },
+    ).json()
+    request = student.post(f"/api/v1/courses/{course['id']}/registrations").json()
+    admin.post(f"/api/v1/admin/registrations/{request['id']}/decision", json={"approve": True})
+    enrolled = prof.post(
+        f"/api/v1/offerings/{offering['id']}/enrollments", json={"email": "stu@elio.test"}
+    )
+    assert enrolled.status_code == 201, enrolled.text
+    return ClassSetup(admin, prof, student, outsider, offering["id"])

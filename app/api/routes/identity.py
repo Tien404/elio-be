@@ -19,6 +19,7 @@ from app.api.schemas.identity import (
     LoginRequest,
     MeView,
     SessionView,
+    SignUpRequest,
     UpdateProfileRequest,
 )
 from app.domain.context import SessionContext
@@ -42,6 +43,20 @@ def create_session(
     set_session_cookie(response, settings, issued.token, issued.view["absoluteExpiresAt"])
     response.headers["Cache-Control"] = "no-store"
     return issued.view
+
+
+@router.post(
+    "/auth/sign-up",
+    operation_id="signUpStudent",
+    status_code=201,
+    response_model=MeView,
+    summary="Public student sign-up; log in afterwards with POST /auth/sessions.",
+    responses={409: {"description": "EMAIL_TAKEN"}},
+)
+def sign_up_student(body: SignUpRequest, service: AuthServiceDep):
+    return service.sign_up_student(
+        email=body.email, display_name=body.displayName, password=body.password
+    )
 
 
 @router.delete("/auth/session", operation_id="deleteCurrentSession", status_code=204)

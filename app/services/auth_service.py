@@ -28,6 +28,7 @@ from app.infrastructure.db.repositories.audit_repository import AuditRepository
 from app.infrastructure.db.repositories.identity_repository import (
     IdentityRepository,
     account_view,
+    user_from_row,
 )
 from app.infrastructure.db.sql import Sql, is_unique_violation
 
@@ -55,12 +56,13 @@ class AuthService:
         with self.database.transaction() as connection:
             repo = IdentityRepository(Sql(connection))
             account = repo.find_by_email(normalize_email(email))
+            user = user_from_row(account) if account else None
             # Always run one hash verification so unknown emails cost the same time.
-            stored = account["password_hash"] if account else DUMMY_PASSWORD_HASH
+            stored = user.password_hash if user else DUMMY_PASSWORD_HASH
             valid = verify_password(password, stored)
-            if not account or not valid or account["status"] != "ACTIVE":
+            if not user or not valid or not user.is_active():
                 raise ApiError(401, "INVALID_CREDENTIALS", "Email or password is incorrect.")
-            restricted = bool(account["must_change_pwd"])
+            restricted = user.must_change_password
             token = new_session_token()
             session = repo.insert_session(
                 user_id=account["user_id"],
@@ -212,7 +214,46 @@ class AuthService:
                 ) from None
             raise
 
-    def admin_create_account(
+    def sign_up_student(self, *, email: str, display_name: str, password: str) -> dict[str, Any]:
+        """Public self sign-up (team MVP addition). Students only; usable at once.
+
+        created_by stays NULL: the account was not provisioned by an administrator.
+        Instructors and admins are still created by an administrator.
+        """
+        _check_new_password(password)
+        name = display_name.strip()
+        if not name:
+            raise ApiError(400, "INVALID_REQUEST", "Display name must not be blank.")
+        try:
+            with self.database.transaction() as connection:
+                sql = Sql(connection)
+                repo = IdentityRepository(sql)
+                user_id = repo.insert_user(
+                    email=normalize_email(email),
+                    full_name=name,
+                    password_hash=hash_password(password),
+                    role="STUDENT",
+                    must_change_pwd=False,
+                    created_by=None,
+                )
+                repo.insert_student(user_id)
+                AuditRepository(sql).record(
+                    actor_id=user_id,
+                    action="ACCOUNT_SIGNED_UP",
+                    target_type="ACCOUNT",
+                    target_id=user_id,
+                    details={"role": "STUDENT"},
+                )
+                account = repo.get_account(user_id)
+        except Exception as error:
+            if is_unique_violation(error):
+                raise conflict(
+                    "EMAIL_TAKEN", "An account with this email already exists."
+                ) from None
+            raise
+        return account_view(account)
+
+    def create_account(
         self, *, actor: Actor, email: str, display_name: str, role: str, can_create_course: bool
     ) -> dict[str, Any]:
         _require_admin(actor)
@@ -263,7 +304,7 @@ class AuthService:
             raise
         return view
 
-    def admin_update_account(
+    def update_account(
         self,
         *,
         actor: Actor,
@@ -317,7 +358,7 @@ class AuthService:
                 )
             return account_view(repo.get_account(account_id))
 
-    def admin_reset_password(self, *, actor: Actor, account_id: int, reason: str) -> dict:
+    def reset_password(self, *, actor: Actor, account_id: int, reason: str) -> dict:
         _require_admin(actor)
         password = temporary_password()
         with self.database.transaction() as connection:

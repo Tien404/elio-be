@@ -59,6 +59,14 @@ class ChangePasswordRequest(RequestModel):
     newPassword: Annotated[str, Field(min_length=12, max_length=1024)]
 
 
+class SignUpRequest(RequestModel):
+    """Public student self sign-up (team MVP addition, not in the OpenAPI contract)."""
+
+    email: Email
+    displayName: DisplayName
+    password: Annotated[str, Field(min_length=12, max_length=1024)]
+
+
 class CreateAccountRequest(RequestModel):
     email: Email
     displayName: DisplayName

@@ -71,3 +71,8 @@ def violated_constraint(error: BaseException) -> str | None:
 def is_unique_violation(error: BaseException) -> bool:
     text = " ".join(str(arg) for arg in getattr(error, "args", ()))
     return any(code in text for code in _UNIQUE_CODES)
+
+
+def like_literal(text: str) -> str:
+    """Escape LIKE wildcards so user input is matched literally (wrap with % yourself)."""
+    return text.replace("[", "[[]").replace("%", "[%]").replace("_", "[_]")

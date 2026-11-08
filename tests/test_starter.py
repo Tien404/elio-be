@@ -101,7 +101,8 @@ def test_openapi_is_generated_from_route_declarations(client):
 
 @pytest.mark.parametrize("value", ["0", "-1", "not-an-id", "2147483648"])
 def test_invalid_path_id_uses_safe_validation_error(client, value):
-    response = client.get(f"/api/v1/submissions/{value}")
+    # a placeholder route without login, so only path validation applies
+    response = client.get(f"/api/v1/groups/{value}")
     assert response.status_code == 400
     assert response.json()["code"] == "INVALID_REQUEST"
 

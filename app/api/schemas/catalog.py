@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from app.api.schemas.common import Id, RequestModel, ResponseModel
+from app.api.schemas.common import Id, Instant, PageMeta, RequestModel, ResponseModel
 
 DegreeLevel = Literal["UNDERGRADUATE", "MASTERS", "PHD"]
 
@@ -30,3 +30,37 @@ class CreateCatalogCourseRequest(RequestModel):
     courseName: Annotated[str, Field(min_length=1, max_length=200)]
     credits: Annotated[Decimal, Field(gt=0, max_digits=3, decimal_places=1)]
     description: Annotated[str | None, Field(max_length=4000)] = None
+
+
+class CatalogCoursePage(PageMeta):
+    items: list[CatalogCourse]
+
+
+class StudentSummary(ResponseModel):
+    id: Id
+    displayName: str
+    email: str
+    studentCode: str
+
+
+class StudentList(ResponseModel):
+    items: list[StudentSummary]
+
+
+class Registration(ResponseModel):
+    """A student's request to take a catalog course (team MVP flow)."""
+
+    id: Id
+    course: CatalogCourse
+    student: StudentSummary | None = Field(description="Filled in for admins")
+    status: Literal["PENDING", "APPROVED", "REJECTED"]
+    requestedAt: Instant
+    decidedAt: Instant | None
+
+
+class RegistrationPage(PageMeta):
+    items: list[Registration]
+
+
+class ReviewRegistrationRequest(RequestModel):
+    approve: bool

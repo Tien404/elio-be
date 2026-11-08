@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any
 
+from app.domain.entities import AccountStatus, SystemRole, User
 from app.infrastructure.db.sql import Sql
 
 _ACCOUNT_COLUMNS = """
@@ -192,6 +193,18 @@ class IdentityRepository:
                WHERE user_id = ? AND revoked_at IS NULL""",
             user_id,
         )
+
+
+def user_from_row(row: dict[str, Any]) -> User:
+    return User(
+        user_id=row["user_id"],
+        email=row["email"],
+        full_name=row["full_name"],
+        password_hash=row["password_hash"],
+        role=SystemRole(row["role"]),
+        status=AccountStatus(row["status"]),
+        must_change_password=bool(row["must_change_pwd"]),
+    )
 
 
 def account_view(row: dict[str, Any]) -> dict[str, Any]:

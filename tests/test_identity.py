@@ -234,3 +234,37 @@ def test_cli_account_creation_logs_in_without_temporary_password(api):
         raise AssertionError("duplicate email accepted")
     except ApiError as error:
         assert error.code == "EMAIL_TAKEN"
+
+
+def test_student_can_sign_up_and_log_in_at_once(api):
+    client = TestClient(api.app)
+    body = {"email": "New.Student@elio.test", "displayName": "New Student", "password": "x" * 12}
+    created = client.post("/api/v1/auth/sign-up", json=body)
+    assert created.status_code == 201, created.text
+    assert created.json()["email"] == "new.student@elio.test"
+    assert created.json()["account"]["role"] == "STUDENT"
+    assert created.json()["account"]["mustChangePassword"] is False
+    assert "x" * 12 not in created.text
+
+    student = login(api, "new.student@elio.test", "x" * 12)
+    assert student.body["restricted"] is False
+    assert student.get("/api/v1/me").json()["account"]["role"] == "STUDENT"
+
+    again = client.post("/api/v1/auth/sign-up", json={**body, "email": "NEW.student@elio.test"})
+    assert again.status_code == 409 and again.json()["code"] == "EMAIL_TAKEN"
+
+
+def test_sign_up_is_students_only_and_validated(api):
+    client = TestClient(api.app)
+    good = {"email": "s@elio.test", "displayName": "S", "password": "x" * 12}
+    for bad in (
+        {**good, "role": "ADMIN"},  # role cannot be chosen
+        {**good, "canCreateCourse": True},
+        {**good, "password": "short"},
+        {**good, "email": "not-an-email"},
+        {**good, "displayName": ""},
+    ):
+        response = client.post("/api/v1/auth/sign-up", json=bad)
+        assert response.status_code in (400, 422), bad
+    blank = client.post("/api/v1/auth/sign-up", json={**good, "displayName": "   "})
+    assert blank.status_code == 400
