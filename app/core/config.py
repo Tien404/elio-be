@@ -12,3 +12,13 @@ class Settings(BaseSettings):
     db_connect_timeout_seconds: int = Field(default=2, ge=1, le=30)
     db_query_timeout_seconds: int = Field(default=5, ge=1, le=60)
     private_files_dir: Path = Path("./data/private")
+
+    # Sessions: opaque cookie, absolute lifetime, no sliding renewal.
+    session_cookie_name: str = "elio_session"
+    session_ttl_hours: int = Field(default=12, ge=1, le=24 * 14)
+    # Browsers accept Secure cookies on http://localhost; set False only for plain-HTTP test clients.
+    session_cookie_secure: bool = True
+
+    # Contract gap API-G05: the temporary-password delivery channel is not decided yet.
+    # Until it is, temporary passwords are written to private files here (never logged/returned).
+    credential_outbox_dir: Path = Path("./data/private/credential-outbox")

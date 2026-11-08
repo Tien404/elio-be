@@ -1,7 +1,23 @@
+import struct
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from importlib import import_module
 
 from app.core.config import Settings
+
+SQL_SS_TIMESTAMPOFFSET = -155
+
+
+def _datetimeoffset(value: bytes | None) -> datetime | None:
+    """pyodbc has no native DATETIMEOFFSET support; decode the ODBC struct to an aware UTC datetime."""
+    if value is None:
+        return None
+    year, month, day, hour, minute, second, fraction, tz_hour, tz_minute = struct.unpack(
+        "<6hI2h", value
+    )
+    local = datetime(year, month, day, hour, minute, second, fraction // 1000)
+    offset = timedelta(hours=tz_hour, minutes=tz_minute)
+    return (local - offset).replace(tzinfo=timezone.utc)
 
 
 class DatabaseUnavailable(RuntimeError):
@@ -34,6 +50,8 @@ class PyodbcDatabase:
                 timeout=self.settings.db_connect_timeout_seconds,
             )
             connection.timeout = self.settings.db_query_timeout_seconds
+            if hasattr(connection, "add_output_converter"):
+                connection.add_output_converter(SQL_SS_TIMESTAMPOFFSET, _datetimeoffset)
             return connection
         except driver.Error:
             if connection is not None:

@@ -49,6 +49,11 @@ Scripts trong `sql/migrations/` (000–005, 38 bảng theo [logical model](app/c
 powershell -ExecutionPolicy Bypass -File sql/apply_migrations.ps1
 # SQL login / server khác
 powershell -ExecutionPolicy Bypass -File sql/apply_migrations.ps1 -Server "tcp:HOST,1433" -Database elio_dev -User YOUR_DDL_USER
+# Tài khoản dev (CHỈ DB tên chứa "dev"): user 1 admin@elio.local / ElioAdmin@2026
+sqlcmd -S localhost -E -C -I -b -d elio_dev -i sql/seed/dev_seed.sql
+# Tạo tài khoản test với mật khẩu tự chọn (hỏi mật khẩu, tối thiểu 12 ký tự)
+python -m scripts.create_user --email stu1@elio.local --name "Student One" --role STUDENT
+python -m scripts.create_user --email prof1@elio.local --name "Prof One" --role INSTRUCTOR --can-create-course
 # Smoke test (rollback, không để lại dữ liệu)
 sqlcmd -S localhost -E -C -I -b -d elio_dev -i sql/tests/smoke_test.sql
 ```

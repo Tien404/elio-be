@@ -34,7 +34,7 @@ INSERT dbo.students (user_id, student_code) VALUES (@stu2, N'S002');
 INSERT dbo.user_sessions (user_id, token_hash, expires_at)
 VALUES (@stu, REPLICATE('ab', 32), DATEADD(HOUR, 8, @now));
 
-INSERT dbo.courses (course_code, course_name, credits) VALUES (N'CS101', N'Intro to CS', 3);
+INSERT dbo.courses (course_code, course_name, credits) VALUES (N'CS1001', N'Intro to CS', 3);
 SET @course = SCOPE_IDENTITY();
 INSERT dbo.course_offerings (course_id, semester, section_code, title, state, join_code, join_code_enabled, created_by)
 VALUES (@course, N'2026A', N'01', N'CS101 - 01', 'OPEN', 'ABC123', 1, @inst);

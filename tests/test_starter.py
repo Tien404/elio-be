@@ -10,7 +10,7 @@ from app.core.config import Settings
 from app.main import create_app
 
 CONTRACTS = Path(__file__).parents[1] / "app/contracts"
-CATALOG = json.loads((CONTRACTS / "catalog.json").read_text())
+CATALOG = json.loads((CONTRACTS / "catalog.json").read_text(encoding="utf-8"))
 
 
 @pytest.fixture
@@ -44,8 +44,20 @@ def test_unknown_route_uses_problem_without_echoing_input(client):
     assert "never-echo-this" not in response.text
 
 
+def _implemented(client) -> set[str]:
+    """Operations whose route no longer declares the 501 placeholder."""
+    schema = client.get("/openapi.json").json()
+    return {
+        op["operationId"]
+        for op in CATALOG
+        if "501" not in schema["paths"][op["path"]][op["method"].lower()]["responses"]
+    }
+
+
 @pytest.mark.parametrize("operation", CATALOG, ids=lambda op: op["operationId"])
-def test_every_business_route_is_explicit_501_not_a_mock_success(client, operation):
+def test_unimplemented_routes_are_explicit_501_not_a_mock_success(client, operation):
+    if operation["operationId"] in _implemented(client):
+        pytest.skip("implemented; covered by integration tests")
     path = re.sub(
         r"\{([^}]+)\}",
         lambda match: "demo_request_key_0001" if match[1] == "requestKey" else "1",
@@ -62,14 +74,18 @@ def test_openapi_is_generated_from_route_declarations(client):
     schema = client.get("/openapi.json").json()
     assert client.app.openapi.__func__ is FastAPI.openapi
     assert len(CATALOG) == 78
+    implemented = _implemented(client)
     for op in CATALOG:
         actual = schema["paths"][op["path"]][op["method"].lower()]
         assert actual["operationId"] == op["operationId"]
-        assert "501" in actual["responses"]
-        assert not any(code.startswith("2") for code in actual["responses"])
-        assert "requestBody" not in actual
-        assert "security" not in actual
         assert "x-implementation-status" not in actual
+        if op["operationId"] in implemented:
+            # Real routes declare the contract's success status.
+            expected = set(op["success"])
+            assert expected & set(actual["responses"]), (op["operationId"], actual["responses"])
+        else:
+            assert not any(code.startswith("2") for code in actual["responses"])
+            assert "requestBody" not in actual
         names = re.findall(r"\{([^}]+)\}", op["path"])
         paths = {p["name"]: p for p in actual.get("parameters", []) if p["in"] == "path"}
         assert set(paths) == set(names)
@@ -79,7 +95,6 @@ def test_openapi_is_generated_from_route_declarations(client):
     assert assignment_id["schema"]["type"] == "integer"
     assert assignment_id["schema"]["minimum"] == 1
     assert assignment_id["schema"]["maximum"] == 2147483647
-    assert "SessionView" not in schema.get("components", {}).get("schemas", {})
     assert client.get("/docs").status_code == 200
     assert client.get("/redoc").status_code == 200
 
@@ -98,7 +113,7 @@ def test_invalid_receipt_key_uses_safe_validation_error(client):
 
 
 def test_portable_contract_has_complete_internal_references():
-    spec = json.loads((CONTRACTS / "openapi.json").read_text())
+    spec = json.loads((CONTRACTS / "openapi.json").read_text(encoding="utf-8"))
 
     def visit(value):
         if isinstance(value, dict):
@@ -117,7 +132,13 @@ def test_portable_contract_has_complete_internal_references():
     visit(spec)
 
 
-def test_no_business_schema_is_falsely_installed():
-    assert not list((Path(__file__).parents[1] / "sql/migrations").glob("*.sql"))
-    model = json.loads((Path(__file__).parents[1] / "app/contracts/logical-model.json").read_text())
-    assert len(model) == 38  # Logical design only, not 38 installed SQL Server tables.
+def test_migrations_create_every_logical_model_table():
+    root = Path(__file__).parents[1]
+    model = json.loads((root / "app/contracts/logical-model.json").read_text(encoding="utf-8"))
+    assert len(model) == 38
+    sql = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted((root / "sql/migrations").glob("*.sql"))
+    )
+    created = set(re.findall(r"CREATE TABLE dbo\.(\w+)", sql))
+    team_additions = {"course_registrations"}  # 006: MVP sign-up requests, not in the model
+    assert created - {"schema_migrations"} == set(model) | team_additions

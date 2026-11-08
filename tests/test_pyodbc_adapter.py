@@ -28,6 +28,9 @@ class FakeCursor:
     def fetchone(self):
         return self.connection.row
 
+    def fetchall(self):
+        return []  # e.g. no applied migrations
+
     def close(self):
         self.connection.events.append("cursor.close")
 
@@ -189,4 +192,6 @@ def test_startup_live_docs_and_business_stubs_do_not_load_odbc(monkeypatch):
         assert client.get("/health/live").status_code == 200
         assert client.get("/docs").status_code == 200
         assert client.get("/openapi.json").status_code == 200
-        assert client.post("/api/v1/auth/sessions").status_code == 501
+        # request validation happens before any database access
+        assert client.post("/api/v1/auth/sessions").status_code == 400
+        assert client.get("/api/v1/dashboard").status_code == 501
