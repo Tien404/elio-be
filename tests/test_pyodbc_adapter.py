@@ -194,4 +194,4 @@ def test_startup_live_docs_and_business_stubs_do_not_load_odbc(monkeypatch):
         assert client.get("/openapi.json").status_code == 200
         # request validation happens before any database access
         assert client.post("/api/v1/auth/sessions").status_code == 400
-        assert client.get("/api/v1/dashboard").status_code == 501
+        assert client.get("/api/v1/dashboard").status_code == 401

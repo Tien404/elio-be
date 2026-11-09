@@ -73,7 +73,7 @@ def test_unimplemented_routes_are_explicit_501_not_a_mock_success(client, operat
 def test_openapi_is_generated_from_route_declarations(client):
     schema = client.get("/openapi.json").json()
     assert client.app.openapi.__func__ is FastAPI.openapi
-    assert len(CATALOG) == 78
+    assert len(CATALOG) == len({op["operationId"] for op in CATALOG})
     implemented = _implemented(client)
     for op in CATALOG:
         actual = schema["paths"][op["path"]][op["method"].lower()]

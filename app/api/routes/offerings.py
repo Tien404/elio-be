@@ -2,10 +2,17 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Response
 
-from app.api.dependencies import ActorDep, CourseServiceDep, MutationActorDep, set_etag
-from app.api.schemas.catalog import CatalogCoursePage, StudentList
-from app.api.schemas.offerings import CreateOfferingRequest, Offering, OfferingPage
-from app.services.course_service import CourseService
+from app.api.dependencies import ActorDep, CourseServiceDep, MutationActorDep, VersionDep, set_etag
+from app.api.schemas.catalog import CatalogCourse, CatalogCoursePage, StudentList
+from app.api.schemas.offerings import (
+    CreateOfferingRequest,
+    JoinCodeRequest,
+    Membership,
+    Offering,
+    OfferingPage,
+    RestoreOfferingRequest,
+    UpdateOfferingRequest,
+)
 
 router = APIRouter(tags=["offerings"], responses={400: {"description": "Invalid request"}})
 
@@ -50,6 +57,8 @@ def create_course(
         semester=body.semester,
         title=body.title,
         instructor_email=body.instructorEmail,
+        section_code=body.sectionCode,
+        learning_information=body.learningInformation,
     )
     response.headers["Location"] = f"/api/v1/offerings/{view['id']}"
     set_etag(response, view["version"])
@@ -80,14 +89,59 @@ def list_approved_students(offering_id: OfferingId, actor: ActorDep, service: Co
     return service.list_approved_students(actor=actor, offering_id=offering_id)
 
 
-@router.patch("/offerings/{offeringId}", operation_id="updateCourse", status_code=501)
-def update_course(offeringId: int = Path(ge=1, le=2147483647)):
-    return CourseService().update_course(offering_id=offeringId)
+@router.patch("/offerings/{offeringId}", operation_id="updateCourse", response_model=Offering)
+def update_course(
+    offering_id: OfferingId,
+    body: UpdateOfferingRequest,
+    actor: MutationActorDep,
+    version: VersionDep,
+    response: Response,
+    service: CourseServiceDep,
+):
+    view = service.update_course(
+        actor=actor,
+        offering_id=offering_id,
+        expected_version=version,
+        changes=body.model_dump(exclude_unset=True, exclude_none=True),
+    )
+    set_etag(response, view["version"])
+    return view
 
 
-@router.post("/offerings/{offeringId}/restore", operation_id="restoreOffering", status_code=501)
-def restore_offering(offeringId: int = Path(ge=1, le=2147483647)):
-    return CourseService().restore_offering(offering_id=offeringId)
+@router.post(
+    "/offerings/{offeringId}/restore", operation_id="restoreOffering", response_model=Offering
+)
+def restore_offering(
+    offering_id: OfferingId,
+    body: RestoreOfferingRequest,
+    actor: MutationActorDep,
+    version: VersionDep,
+    response: Response,
+    service: CourseServiceDep,
+):
+    view = service.restore_offering(
+        actor=actor, offering_id=offering_id, expected_version=version, reason=body.reason
+    )
+    set_etag(response, view["version"])
+    return view
+
+
+@router.post(
+    "/offerings/join", operation_id="joinOfferingByCode", response_model=Membership, status_code=201
+)
+def join_offering_by_code(
+    body: JoinCodeRequest, actor: MutationActorDep, service: CourseServiceDep
+):
+    return service.join_by_code(actor=actor, code=body.code)
+
+
+@router.get("/courses/{courseId}", operation_id="getCatalogCourse", response_model=CatalogCourse)
+def get_catalog_course(
+    course_id: Annotated[int, Path(alias="courseId", ge=1, le=2147483647)],
+    actor: ActorDep,
+    service: CourseServiceDep,
+):
+    return service.get_catalog_course(actor=actor, course_id=course_id)
 
 
 @router.get(

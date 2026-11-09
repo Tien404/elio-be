@@ -58,12 +58,7 @@ def create_assignment(
     view = service.save_assignment(
         actor=actor,
         offering_id=offering_id,
-        topic_id=body.topicId,
-        title=body.title,
-        due_at=body.dueAt,
-        max_score=body.maxScore,
-        status=body.status,
-        instructions=body.instructions,
+        data=body.model_dump(),
     )
     response.headers["Location"] = f"/api/v1/assignments/{view['id']}"
     set_etag(response, view["version"])
@@ -101,9 +96,7 @@ def update_assignment(
         actor=actor,
         assignment_id=assignment_id,
         expected_version=version,
-        title=body.title,
-        due_at=body.dueAt,
-        status=body.status,
+        changes=body.model_dump(exclude_unset=True),
     )
     set_etag(response, view["version"])
     return view

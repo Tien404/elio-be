@@ -78,12 +78,7 @@ def create_resource(
     view = service.save_material(
         actor=actor,
         offering_id=offering_id,
-        topic_id=body.topicId,
-        kind=body.kind,
-        title=body.title,
-        status=body.status,
-        external_url=body.externalUrl,
-        file_ids=body.fileIds,
+        data=body.model_dump(),
     )
     response.headers["Location"] = f"/api/v1/resources/{view['id']}"
     set_etag(response, view["version"])
@@ -118,8 +113,7 @@ def update_resource(
         actor=actor,
         material_id=resource_id,
         expected_version=version,
-        title=body.title,
-        status=body.status,
+        changes=body.model_dump(exclude_unset=True),
     )
     set_etag(response, view["version"])
     return view
@@ -155,6 +149,18 @@ def create_topic(
     )
 
 
-@router.patch("/topics/{topicId}", operation_id="updateTopic", status_code=501)
-def update_topic(topicId: int = Path(ge=1, le=2147483647)):
-    return ContentService().update_topic(topic_id=topicId)
+@router.patch("/topics/{topicId}", operation_id="updateTopic", response_model=Topic)
+def update_topic(
+    topicId: Annotated[int, Path(ge=1, le=2147483647)],
+    body: TopicRequest,
+    actor: MutationActorDep,
+    version: VersionDep,
+    service: ContentServiceDep,
+):
+    return service.update_topic(
+        actor=actor,
+        topic_id=topicId,
+        expected_version=version,
+        title=body.title,
+        position=body.position,
+    )

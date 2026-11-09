@@ -8,12 +8,13 @@ from app.infrastructure.db.sql import Sql
 _TOPIC_COLUMNS = "t.topic_id, t.offering_id, t.title, t.position, t.version"
 _FILE_COLUMNS = """f.file_id, f.offering_id, f.uploaded_by, f.purpose, f.assignment_id,
     f.file_key, f.file_name, f.mime_type, f.size_bytes, f.sha256, f.state, f.expires_at"""
-_MATERIAL_SELECT = """SELECT m.material_id, m.topic_id, m.kind, m.title, m.status, m.version,
-        t.offering_id, lm.url, fm.file_id
+_MATERIAL_SELECT = """SELECT m.material_id, m.topic_id, m.kind, m.title, m.status, m.version, m.is_mandatory,
+        t.offering_id, lm.url, fm.file_id, tm.body
     FROM dbo.materials AS m
     JOIN dbo.topics AS t ON t.topic_id = m.topic_id
     LEFT JOIN dbo.link_materials AS lm ON lm.material_id = m.material_id
-    LEFT JOIN dbo.file_materials AS fm ON fm.material_id = m.material_id"""
+    LEFT JOIN dbo.file_materials AS fm ON fm.material_id = m.material_id
+    LEFT JOIN dbo.text_materials AS tm ON tm.material_id = m.material_id"""
 
 
 class ContentRepository:
@@ -106,35 +107,40 @@ class ContentRepository:
         self.sql.execute("UPDATE dbo.file_assets SET state = 'ATTACHED' WHERE file_id = ?", file_id)
 
     # --------------------------------------------------------------- materials
-    def insert_material(
-        self,
-        *,
-        topic_id: int,
-        kind: MaterialKind,
-        title: str,
-        status: PublishStatus,
-        url: str | None,
-        file_id: int | None,
-    ) -> int:
+    def insert_material(self, *, data):
         material_id = self.sql.scalar(
-            """INSERT dbo.materials (topic_id, kind, title, status)
-               OUTPUT INSERTED.material_id VALUES (?, ?, ?, ?)""",
-            topic_id,
-            str(kind),
-            title,
-            str(status),
+            """INSERT dbo.materials (topic_id,kind,title,status,is_mandatory)
+               OUTPUT INSERTED.material_id VALUES (?,?,?,?,?)""",
+            data["topicId"],
+            data["kind"],
+            data["title"],
+            data["status"],
+            data["mandatory"],
         )
-        if kind == MaterialKind.LINK:
+        self.set_material_body(material_id, data)
+        return material_id
+
+    def set_material_body(self, material_id, data):
+        for table in ("file_materials", "link_materials", "text_materials"):
+            self.sql.execute(f"DELETE dbo.{table} WHERE material_id=?", material_id)
+        if data["kind"] == "FILE":
             self.sql.execute(
-                "INSERT dbo.link_materials (material_id, url) VALUES (?, ?)", material_id, url
+                "INSERT dbo.file_materials (material_id,file_id) VALUES (?,?)",
+                material_id,
+                data["fileIds"][0],
+            )
+        elif data["kind"] == "LINK":
+            self.sql.execute(
+                "INSERT dbo.link_materials (material_id,url) VALUES (?,?)",
+                material_id,
+                data["externalUrl"],
             )
         else:
             self.sql.execute(
-                "INSERT dbo.file_materials (material_id, file_id) VALUES (?, ?)",
+                "INSERT dbo.text_materials (material_id,body) VALUES (?,?)",
                 material_id,
-                file_id,
+                data["body"],
             )
-        return material_id
 
     def get_material(self, material_id: int, *, lock: bool = False) -> dict[str, Any] | None:
         """Material + its class (offering_id) + link url or file id."""
@@ -168,14 +174,67 @@ class ContentRepository:
         )
         return rows, total
 
-    def update_material(self, material: Material) -> None:
+    def update_material(self, material_id, data):
+        for table in ("file_materials", "link_materials", "text_materials"):
+            self.sql.execute(f"DELETE dbo.{table} WHERE material_id=?", material_id)
         self.sql.execute(
-            """UPDATE dbo.materials SET title = ?, status = ?, version = version + 1
-               WHERE material_id = ?""",
-            material.title,
-            str(material.status),
-            material.material_id,
+            "UPDATE dbo.materials SET title=?,topic_id=?,kind=?,status=?,is_mandatory=?,version=version+1 WHERE material_id=?",
+            data["title"],
+            data["topicId"],
+            data["kind"],
+            data["status"],
+            data["mandatory"],
+            material_id,
         )
+        self.set_material_body(material_id, data)
+
+    def reorder_topic(self, topic_id, title, position):
+        topic = self.get_topic(topic_id)
+        rows = self.sql.all(
+            "SELECT topic_id,position FROM dbo.topics WITH (UPDLOCK,HOLDLOCK) WHERE offering_id=? ORDER BY position",
+            topic.offering_id,
+        )
+        ordered = [r["topic_id"] for r in rows if r["topic_id"] != topic_id]
+        ordered.insert(position - 1, topic_id)
+        old = {r["topic_id"]: r["position"] for r in rows}
+        moved = [(number, id) for number, id in enumerate(ordered, 1) if old[id] != number]
+        temporary = max(old.values()) + 1
+        for offset, (_, id) in enumerate(moved):
+            self.sql.execute(
+                "UPDATE dbo.topics SET position=? WHERE topic_id=?", temporary + offset, id
+            )
+        for number, id in moved:
+            self.sql.execute(
+                "UPDATE dbo.topics SET position=?,version=version+1 WHERE topic_id=?", number, id
+            )
+        self.sql.execute(
+            "UPDATE dbo.topics SET title=?,version=version+? WHERE topic_id=?",
+            title,
+            0 if topic_id in {id for _, id in moved} else 1,
+            topic_id,
+        )
+
+    def completed(self, student_id, material_id):
+        return bool(
+            self.sql.scalar(
+                "SELECT COUNT(*) FROM dbo.material_completions WHERE student_id=? AND material_id=?",
+                student_id,
+                material_id,
+            )
+        )
+
+    def set_completion(self, student_id, material_id, complete):
+        self.sql.execute(
+            "DELETE dbo.material_completions WHERE student_id=? AND material_id=?",
+            student_id,
+            material_id,
+        )
+        if complete:
+            self.sql.execute(
+                "INSERT dbo.material_completions (student_id,material_id) VALUES (?,?)",
+                student_id,
+                material_id,
+            )
 
 
 def topic_from_row(row: dict[str, Any]) -> Topic:

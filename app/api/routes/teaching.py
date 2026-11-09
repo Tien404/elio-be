@@ -1,5 +1,9 @@
-from fastapi import APIRouter, Path
+from typing import Annotated
 
+from fastapi import APIRouter, Path, Query
+
+from app.api.dependencies import ActorDep, CourseServiceDep
+from app.api.schemas.offerings import MembershipPage
 from app.services.course_service import CourseService
 
 router = APIRouter(tags=["teaching"], responses={400: {"description": "Invalid request"}})
@@ -19,10 +23,20 @@ def remove_instructor_membership(
 
 
 @router.get(
-    "/offerings/{offeringId}/teaching-team", operation_id="getTeachingTeam", status_code=501
+    "/offerings/{offeringId}/teaching-team",
+    operation_id="getTeachingTeam",
+    response_model=MembershipPage,
 )
-def get_teaching_team(offeringId: int = Path(ge=1, le=2147483647)):
-    return CourseService().get_teaching_team(offering_id=offeringId)
+def get_teaching_team(
+    offeringId: Annotated[int, Path(ge=1, le=2147483647)],
+    actor: ActorDep,
+    service: CourseServiceDep,
+    page: Annotated[int, Query(ge=1)] = 1,
+    pageSize: Annotated[int, Query(ge=1, le=100)] = 25,
+):
+    return service.get_teaching_team(
+        actor=actor, offering_id=offeringId, page=page, page_size=pageSize
+    )
 
 
 @router.post(

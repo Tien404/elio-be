@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from app.api.schemas.common import Id, Instant, PageMeta, RequestModel, ResponseModel
+from app.api.schemas.identity import AccountSummary
 
 DegreeLevel = Literal["UNDERGRADUATE", "MASTERS", "PHD"]
 
@@ -43,8 +44,12 @@ class StudentSummary(ResponseModel):
     studentCode: str
 
 
+class EnrollmentCandidate(StudentSummary):
+    account: AccountSummary
+
+
 class StudentList(ResponseModel):
-    items: list[StudentSummary]
+    items: list[EnrollmentCandidate]
 
 
 class Registration(ResponseModel):

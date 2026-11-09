@@ -81,6 +81,14 @@ def problem(
 
 
 def install_error_handlers(app: FastAPI) -> None:
+    from app.infrastructure.db.connection import DatabaseUnavailable
+
+    @app.exception_handler(DatabaseUnavailable)
+    async def database_unavailable(request: Request, exc: DatabaseUnavailable):
+        return problem(
+            503, "DATABASE_UNAVAILABLE", "Database connection is unavailable.", request.url.path
+        )
+
     @app.exception_handler(ApiError)
     async def api_error(request: Request, exc: ApiError):
         headers = {"ETag": f'"{exc.current_version}"'} if exc.current_version else None

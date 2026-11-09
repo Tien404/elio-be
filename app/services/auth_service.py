@@ -90,6 +90,18 @@ class AuthService:
             actor=actor, session_id=row["session_id"], token=token, expires_at=row["expires_at"]
         )
 
+    def restore_identity(self, *, session: SessionContext) -> dict:
+        me = self.get_me(actor=session.actor)
+        return {
+            "me": me,
+            "session": {
+                "account": me["account"],
+                "csrfToken": csrf_token_for(session.token),
+                "absoluteExpiresAt": session.expires_at,
+                "restricted": session.actor.restricted,
+            },
+        }
+
     def logout(self, *, session: SessionContext) -> None:
         with self.database.transaction() as connection:
             IdentityRepository(Sql(connection)).revoke_session(session.session_id)

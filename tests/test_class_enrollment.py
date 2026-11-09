@@ -24,10 +24,16 @@ def _setup(api):
         json={
             "courseCode": "CS1001",
             "semester": "2026-1",
+            "sectionCode": "01",
             "title": "CS1001 Morning",
             "instructorEmail": "prof@elio.test",
         },
     ).json()
+    opened = prof.patch(
+        f"/api/v1/offerings/{offering['id']}", json={"status": "OPEN"}, version=offering["version"]
+    )
+    assert opened.status_code == 200, opened.text
+    offering = opened.json()
     return admin, prof, ann, bob, course, offering
 
 
@@ -66,12 +72,12 @@ def test_full_enrollment_flow(api):
     waiting = prof.get(f"/api/v1/offerings/{oid}/approved-students").json()["items"]
     assert [s["email"] for s in waiting] == ["ann@elio.test"]
 
-    # professor adds Ann by email; Bob (rejected) cannot be added
+    # Lead adds an existing student directly; students cannot add themselves by email.
     added = prof.post(f"/api/v1/offerings/{oid}/enrollments", json={"email": "ANN@elio.test"})
     assert added.status_code == 201, added.text
     assert added.json()["role"] == "STUDENT" and added.json()["account"]["displayName"] == "Ann"
-    rejected = prof.post(f"/api/v1/offerings/{oid}/enrollments", json={"email": "bob@elio.test"})
-    assert rejected.status_code == 409 and rejected.json()["code"] == "NOT_APPROVED"
+    rejected = bob.post(f"/api/v1/offerings/{oid}/enrollments", json={"email": "bob@elio.test"})
+    assert rejected.status_code == 403
     again = prof.post(f"/api/v1/offerings/{oid}/enrollments", json={"email": "ann@elio.test"})
     assert again.status_code == 409 and again.json()["code"] == "ALREADY_ENROLLED"
     assert prof.get(f"/api/v1/offerings/{oid}/approved-students").json()["items"] == []
@@ -93,6 +99,10 @@ def test_full_enrollment_flow(api):
     # outsiders don't see the class at all
     assert bob.get(f"/api/v1/offerings/{oid}").status_code == 404
     assert bob.get(f"/api/v1/offerings/{oid}/memberships").status_code == 404
+    candidates = prof.get(f"/api/v1/offerings/{oid}/enrollment-candidates").json()
+    assert bob.account_id in [a["id"] for a in candidates["items"]]
+    direct = prof.post(f"/api/v1/offerings/{oid}/enrollments", json={"accountId": bob.account_id})
+    assert direct.status_code == 201, direct.text
 
 
 def test_only_admin_reviews_and_only_the_class_professor_adds(api):
@@ -125,11 +135,15 @@ def test_student_goes_into_only_one_class_per_course(api):
         json={
             "courseCode": "CS1001",
             "semester": "2026-1",
+            "sectionCode": "02",
             "title": "CS1001 Evening",
             "instructorEmail": "prof@elio.test",
         },
     ).json()
-    _decide(admin, _request(ann, course), True)
+    opened = prof.patch(
+        f"/api/v1/offerings/{second['id']}", json={"status": "OPEN"}, version=second["version"]
+    )
+    assert opened.status_code == 200, opened.text
     ok = prof.post(
         f"/api/v1/offerings/{offering['id']}/enrollments", json={"email": "ann@elio.test"}
     )

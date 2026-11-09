@@ -69,12 +69,32 @@ def test_assignment_open_and_late():
         offering_id=1,
         topic_id=1,
         title="HW1",
+        open_at=NOW,
+        cutoff_at=NOW + timedelta(days=8),
         due_at=NOW + timedelta(days=7),
         max_score=Decimal("10"),
         status=PublishStatus.DRAFT,
     )
-    assert not assignment.is_open()  # drafts accept no submissions
+    assert not assignment.is_open(NOW)  # drafts accept no submissions
     assignment.publish()
-    assert assignment.is_open()
+    assert assignment.is_open(NOW)
     assert not assignment.is_late(NOW + timedelta(days=7))
     assert assignment.is_late(NOW + timedelta(days=7, seconds=1))
+
+
+def test_assignment_cutoff_is_inclusive_and_open_is_enforced():
+    a = Assignment(
+        1,
+        1,
+        1,
+        "Work",
+        NOW,
+        Decimal("10"),
+        PublishStatus.PUBLISHED,
+        open_at=NOW - timedelta(days=1),
+        cutoff_at=NOW + timedelta(days=1),
+    )
+    assert a.is_open(a.open_at)
+    assert a.is_open(a.cutoff_at)
+    assert not a.is_open(a.open_at - timedelta(microseconds=1))
+    assert not a.is_open(a.cutoff_at + timedelta(microseconds=1))

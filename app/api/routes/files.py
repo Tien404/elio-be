@@ -43,6 +43,14 @@ def prepare_file(
             content_type=file.content_type,
             stream=file.file,
         )
+    if purpose == "ASSIGNMENT_ATTACHMENT":
+        return submissions.prepare_attachment(
+            actor=actor,
+            offering_id=offering_id,
+            file_name=file.filename,
+            content_type=file.content_type,
+            stream=file.file,
+        )
     return service.prepare_file(
         actor=actor,
         offering_id=offering_id,
@@ -72,3 +80,10 @@ def download_file(
         filename=download.file_name,
         headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
     )
+
+
+@router.get("/files/{fileId}", operation_id="getFileAsset", response_model=FileAsset)
+def get_file_asset(
+    fileId: Annotated[int, Path(ge=1, le=2147483647)], actor: ActorDep, service: ContentServiceDep
+):
+    return service.get_file(actor=actor, file_id=fileId)

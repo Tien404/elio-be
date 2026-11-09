@@ -41,24 +41,28 @@ def get_course_service(request: Request) -> CourseService:
     return CourseService(request.app.state.database)
 
 
-def _resolve(request: Request) -> SessionContext:
+def _resolve(request: Request, service: AuthService) -> SessionContext:
     cached = getattr(request.state, "session", None)
     if cached is not None:
         return cached
     settings: Settings = request.app.state.settings
     token = request.cookies.get(settings.session_cookie_name)
-    session = get_auth_service(request).resolve_session(token)
+    session = service.resolve_session(token)
     request.state.session = session
     return session
 
 
-def session_allow_restricted(request: Request) -> SessionContext:
+def session_allow_restricted(
+    request: Request, service: Annotated[AuthService, Depends(get_auth_service)]
+) -> SessionContext:
     """Any live session, including temporary-password sessions (logout/change password only)."""
-    return _resolve(request)
+    return _resolve(request, service)
 
 
-def current_session(request: Request) -> SessionContext:
-    session = _resolve(request)
+def current_session(
+    request: Request, service: Annotated[AuthService, Depends(get_auth_service)]
+) -> SessionContext:
+    session = _resolve(request, service)
     if session.actor.restricted:
         raise ApiError(
             403, "PASSWORD_CHANGE_REQUIRED", "Change your temporary password to continue."

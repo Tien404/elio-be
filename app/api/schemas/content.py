@@ -1,17 +1,11 @@
-"""Topics, files and materials ("resources"). Shapes follow the OpenAPI contract.
-
-MVP differences: TopicRequest.position is optional (next free position), materials are
-FILE or LINK only, and UpdateResourceRequest only changes title and/or status.
-"""
-
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.api.schemas.common import Id, Instant, PageMeta, RequestModel, ResponseModel, Version
 
 Title = Annotated[str, Field(min_length=1, max_length=200)]
-Status = Literal["DRAFT", "PUBLISHED"]
+Status = Literal["DRAFT", "PUBLISHED", "ARCHIVED"]
 
 
 class TopicRequest(RequestModel):
@@ -44,20 +38,38 @@ class FileAsset(ResponseModel):
 
 
 class ResourceRequest(RequestModel):
+    body: str | None = None
+    mandatory: bool = False
     title: Title
     topicId: Id
-    kind: Literal["FILE", "LINK"]
+    kind: Literal["FILE", "LINK", "TEXT"]
     status: Status
     externalUrl: Annotated[str | None, Field(max_length=2048)] = None
     fileIds: Annotated[list[Id] | None, Field(max_length=1)] = None
 
 
 class UpdateResourceRequest(RequestModel):
+    topicId: Id | None = None
+    kind: Literal["FILE", "LINK", "TEXT"] | None = None
+    body: str | None = None
+    externalUrl: Annotated[str | None, Field(max_length=2048)] = None
+    fileIds: Annotated[list[Id] | None, Field(max_length=1)] = None
+    mandatory: bool | None = None
     title: Title | None = None
     status: Status | None = None
 
+    @model_validator(mode="after")
+    def nonnullable(self):
+        for name in self.model_fields_set - {"body", "externalUrl"}:
+            if getattr(self, name) is None:
+                raise ValueError(f"{name} must not be null")
+        return self
+
 
 class Resource(ResponseModel):
+    mandatory: bool
+    completed: bool
+    files: list[FileAsset]
     id: Id
     offeringId: Id
     topicId: Id

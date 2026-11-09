@@ -17,6 +17,8 @@ def _box(c, status="PUBLISHED", title="Homework 1", **extra):
         json={
             "title": title,
             "topicId": topic.json()["id"],
+            "openAt": _future(-1),
+            "cutoffAt": extra.get("dueAt", _future(8)),
             "dueAt": _future(),
             "maxScore": 10,
             "status": status,
@@ -49,7 +51,7 @@ def _submit(user, assignment_id, file_ids, expected=0):
 def test_box_is_hidden_until_published(api):
     c = class_with_student(api)
     box = _box(c, status="DRAFT")
-    assert box["mode"] == "INDIVIDUAL" and box["cutoffAt"] is None and box["maxScore"] == 10
+    assert box["mode"] == "INDIVIDUAL" and box["cutoffAt"] is not None and box["maxScore"] == 10
     boxes = f"/api/v1/offerings/{c.offering_id}/assignments"
     assert c.student.get(boxes).json()["items"] == []
     assert c.student.get(f"/api/v1/assignments/{box['id']}").status_code == 404
@@ -134,7 +136,15 @@ def test_who_can_submit_and_see(api):
     assert (
         c.student.post(
             f"/api/v1/offerings/{c.offering_id}/assignments",
-            json={"title": "x", "topicId": 1, "dueAt": _future(), "maxScore": 1, "status": "DRAFT"},
+            json={
+                "title": "x",
+                "topicId": 1,
+                "openAt": _future(-1),
+                "cutoffAt": _future(8),
+                "dueAt": _future(),
+                "maxScore": 1,
+                "status": "DRAFT",
+            },
         ).status_code
         == 403
     )

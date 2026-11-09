@@ -82,3 +82,8 @@ class AdminAccountUpdateRequest(RequestModel):
 
 class ResetPasswordRequest(RequestModel):
     reason: Reason
+
+
+class IdentityView(ResponseModel):
+    me: MeView
+    session: SessionView

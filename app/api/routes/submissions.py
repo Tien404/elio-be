@@ -4,6 +4,7 @@ from fastapi import APIRouter, Path, Query, Response
 
 from app.api.dependencies import ActorDep, MutationActorDep, SubmissionServiceDep
 from app.api.schemas.assessment import Submission, SubmissionPage, SubmissionRequest
+from app.api.schemas.views import SubmissionHistory
 from app.services.submission_service import SubmissionService
 
 router = APIRouter(tags=["submissions"], responses={400: {"description": "Invalid request"}})
@@ -88,3 +89,16 @@ def get_submission_receipt(
     return SubmissionService().get_submission_receipt(
         assignment_id=assignmentId, request_key=requestKey
     )
+
+
+@router.get(
+    "/submissions/{submissionId}/history",
+    operation_id="getSubmissionHistory",
+    response_model=SubmissionHistory,
+)
+def get_submission_history(
+    submissionId: Annotated[int, Path(ge=1, le=2147483647)],
+    actor: ActorDep,
+    service: SubmissionServiceDep,
+):
+    return service.get_submission_history(actor=actor, submission_id=submissionId)

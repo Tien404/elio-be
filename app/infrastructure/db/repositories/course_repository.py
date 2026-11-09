@@ -114,7 +114,7 @@ class CourseRepository:
                    (course_id, semester, section_code, title, state, created_by)
                OUTPUT INSERTED.offering_id, INSERTED.course_id, INSERTED.semester,
                       INSERTED.section_code, INSERTED.title, INSERTED.state, INSERTED.version
-               VALUES (?, ?, ?, ?, 'OPEN', ?)""",
+               VALUES (?, ?, ?, ?, 'DRAFT', ?)""",
             course_id,
             semester,
             section_code,
@@ -122,6 +122,45 @@ class CourseRepository:
             created_by,
         )
         return _offering(row)
+
+    def update_offering(self, offering_id, data):
+        self.sql.execute(
+            """UPDATE dbo.course_offerings SET title=?, semester=?, section_code=?,
+                   learning_information=?, state=?, join_code=?, join_code_enabled=?,
+                   archived_at=CASE WHEN ?='ARCHIVED' THEN SYSUTCDATETIME() ELSE NULL END,
+                   version=version+1 WHERE offering_id=?""",
+            data["title"],
+            data["semester"],
+            data["sectionCode"],
+            data["learningInformation"],
+            data["status"],
+            data["joinCode"],
+            data["joinEnabled"],
+            data["status"],
+            offering_id,
+        )
+
+    def metadata(self, offering_id):
+        return self.sql.one(
+            "SELECT learning_information, join_code, join_code_enabled FROM dbo.course_offerings WHERE offering_id=?",
+            offering_id,
+        )
+
+    def resolve_join_code(self, code):
+        return self.sql.scalar(
+            "SELECT offering_id FROM dbo.course_offerings WITH (UPDLOCK, HOLDLOCK) WHERE join_code=? AND join_code_enabled=1 AND state='OPEN'",
+            code,
+        )
+
+    def has_unfinished_attempts(self, offering_id):
+        return bool(
+            self.sql.scalar(
+                """SELECT COUNT(*) FROM dbo.quiz_attempts AS t
+               JOIN dbo.activities AS a ON a.activity_id=t.quiz_id
+               WHERE a.offering_id=? AND t.finalized_by IS NULL""",
+                offering_id,
+            )
+        )
 
     # ----------------------------------------------------------- registrations
     def insert_registration(self, *, course_id: int, student_id: int) -> CourseRegistration:
@@ -199,7 +238,7 @@ class CourseRepository:
     def list_approved_students(self, course_id: int) -> list[dict[str, Any]]:
         """Approved for the course and not yet in any of its classes (the waiting list)."""
         return self.sql.all(
-            f"""SELECT {_STUDENT_COLUMNS}
+            f"""SELECT {_STUDENT_COLUMNS}, u.must_change_pwd
                 FROM dbo.course_registrations AS r
                 JOIN dbo.users AS u ON u.user_id = r.student_id
                 JOIN dbo.students AS s ON s.user_id = r.student_id
@@ -213,10 +252,26 @@ class CourseRepository:
             course_id,
         )
 
+    def enrollment_candidates(self, course_id, offering_id, search, offset, limit):
+        where = """u.role='STUDENT' AND u.status='ACTIVE'
+          AND NOT EXISTS (SELECT 1 FROM dbo.course_memberships AS m JOIN dbo.course_offerings AS o ON o.offering_id=m.offering_id WHERE m.user_id=u.user_id AND ((o.course_id=? AND m.status='ACTIVE') OR o.offering_id=?))"""
+        params = [course_id, offering_id]
+        if search:
+            where += " AND (u.full_name LIKE ? OR u.email LIKE ?)"
+            params += ["%" + like_literal(search) + "%"] * 2
+        total = self.sql.scalar(f"SELECT COUNT(*) FROM dbo.users AS u WHERE {where}", *params)
+        rows = self.sql.all(
+            f"SELECT u.user_id,u.full_name,u.status,u.role,u.must_change_pwd FROM dbo.users AS u WHERE {where} ORDER BY u.full_name,u.user_id OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+            *params,
+            offset,
+            limit,
+        )
+        return rows, total
+
     # ------------------------------------------------------------ classes
-    def get_offering(self, offering_id: int) -> CourseOffering | None:
+    def get_offering(self, offering_id: int, *, lock=False) -> CourseOffering | None:
         row = self.sql.one(
-            f"SELECT {_OFFERING_COLUMNS} FROM dbo.course_offerings AS o WHERE o.offering_id = ?",
+            f"SELECT {_OFFERING_COLUMNS} FROM dbo.course_offerings AS o {'WITH (UPDLOCK, HOLDLOCK)' if lock else ''} WHERE o.offering_id = ?",
             offering_id,
         )
         return _offering(row) if row else None
@@ -234,7 +289,7 @@ class CourseRepository:
         else:
             where = """EXISTS (SELECT 1 FROM dbo.course_memberships AS me
                                WHERE me.offering_id = o.offering_id AND me.user_id = ?
-                                 AND me.status = 'ACTIVE')"""
+                                 AND me.status = 'ACTIVE' AND (o.state <> 'DRAFT' OR me.course_role <> 'STUDENT'))"""
             params = [member_id]
         total = self.sql.scalar(
             f"SELECT COUNT(*) FROM dbo.course_offerings AS o WHERE {where}", *params

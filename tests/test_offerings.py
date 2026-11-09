@@ -23,19 +23,32 @@ def test_admin_creates_class_and_names_the_professor(api):
     prof = create_user(api, admin, "prof@elio.test", "INSTRUCTOR")
     code = _course(admin)
 
-    body = {"courseCode": code, "semester": "2026-1", "title": "CS1001 Morning"}
+    body = {
+        "courseCode": code,
+        "semester": "2026-1",
+        "sectionCode": "01",
+        "title": "CS1001 Morning",
+    }
     first = admin.post(URL, json={**body, "instructorEmail": "PROF@elio.test"})
     assert first.status_code == 201, first.text
     view = first.json()
     assert view["courseCode"] == "CS1001" and view["sectionCode"] == "01"
-    assert view["status"] == "OPEN" and view["version"] == 1
+    assert view["status"] == "DRAFT" and view["version"] == 1
     assert first.headers["location"] == f"/api/v1/offerings/{view['id']}"
 
     # sections count per course + semester
-    second = admin.post(URL, json={**body, "instructorEmail": "prof@elio.test"})
+    second = admin.post(
+        URL, json={**body, "sectionCode": "02", "instructorEmail": "prof@elio.test"}
+    )
     assert second.json()["sectionCode"] == "02"
     other_term = admin.post(
-        URL, json={**body, "semester": "2026-2", "instructorEmail": "prof@elio.test"}
+        URL,
+        json={
+            **body,
+            "semester": "2026-2",
+            "sectionCode": "01",
+            "instructorEmail": "prof@elio.test",
+        },
     )
     assert other_term.json()["sectionCode"] == "01"
     assert prof.account_id  # professor exists; roster checks come with getRoster
@@ -45,7 +58,7 @@ def test_admin_must_name_an_active_instructor(api):
     admin = bootstrap_admin(api)
     create_user(api, admin, "stu@elio.test", "STUDENT")
     code = _course(admin)
-    body = {"courseCode": code, "semester": "2026-1", "title": "T"}
+    body = {"courseCode": code, "semester": "2026-1", "sectionCode": "01", "title": "T"}
 
     missing = admin.post(URL, json=body)
     assert missing.status_code == 400
@@ -60,7 +73,12 @@ def test_flagged_instructor_creates_own_class(api):
     prof = create_user(api, admin, "prof@elio.test", "INSTRUCTOR", can_create_course=True)
     create_user(api, admin, "other@elio.test", "INSTRUCTOR")
     code = _course(admin)
-    body = {"courseCode": code.lower(), "semester": "2026-1", "title": "My class"}
+    body = {
+        "courseCode": code.lower(),
+        "semester": "2026-1",
+        "sectionCode": "01",
+        "title": "My class",
+    }
 
     own = prof.post(URL, json=body)
     assert own.status_code == 201, own.text
@@ -75,7 +93,7 @@ def test_unflagged_instructor_and_students_cannot_create_classes(api):
     prof = create_user(api, admin, "prof@elio.test", "INSTRUCTOR")
     student = create_user(api, admin, "stu@elio.test", "STUDENT")
     code = _course(admin)
-    body = {"courseCode": code, "semester": "2026-1", "title": "T"}
+    body = {"courseCode": code, "semester": "2026-1", "sectionCode": "01", "title": "T"}
     for user in (prof, student):
         response = user.post(URL, json=body)
         assert response.status_code == 403 and response.json()["code"] == "FORBIDDEN"
@@ -87,6 +105,7 @@ def test_unknown_course_is_404(api):
     body = {
         "courseCode": "CS9999",
         "semester": "2026-1",
+        "sectionCode": "01",
         "title": "T",
         "instructorEmail": "prof@elio.test",
     }

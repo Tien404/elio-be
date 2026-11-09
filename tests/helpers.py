@@ -128,10 +128,15 @@ def class_with_student(api: TestClient) -> ClassSetup:
         json={
             "courseCode": course["courseCode"],
             "semester": "2026-1",
+            "sectionCode": "01",
             "title": "CS1001 Morning",
             "instructorEmail": "prof@elio.test",
         },
     ).json()
+    published = prof.patch(
+        f"/api/v1/offerings/{offering['id']}", json={"status": "OPEN"}, version=offering["version"]
+    )
+    assert published.status_code == 200, published.text
     request = student.post(f"/api/v1/courses/{course['id']}/registrations").json()
     admin.post(f"/api/v1/admin/registrations/{request['id']}/decision", json={"approve": True})
     enrolled = prof.post(

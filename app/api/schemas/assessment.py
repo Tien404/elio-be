@@ -1,37 +1,57 @@
-"""Submission boxes (assignments) and submissions. Responses follow the OpenAPI contract.
-
-MVP differences: an assignment is a box inside a topic with title, due date and max score
-(mode INDIVIDUAL, no weight, cutoffAt null = late work accepted and flagged); the request
-only takes those fields. Submissions need no Idempotency-Key.
-"""
-
-from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import AwareDatetime, Field, model_validator
 
 from app.api.schemas.common import Id, Instant, PageMeta, RequestModel, ResponseModel, Version
+from app.api.schemas.content import FileAsset
 
 Title = Annotated[str, Field(min_length=1, max_length=200)]
-Status = Literal["DRAFT", "PUBLISHED"]
 
 
 class AssignmentRequest(RequestModel):
     title: Title
-    topicId: Id
-    dueAt: Annotated[datetime, Field(description="e.g. 2026-11-30T23:59:00+07:00")]
+    topicId: Id | None = None
+    instructions: str | None = None
+    mode: Literal["INDIVIDUAL"] = "INDIVIDUAL"
+    status: Literal["DRAFT", "PUBLISHED"]
+    openAt: AwareDatetime
+    dueAt: AwareDatetime
+    cutoffAt: AwareDatetime
     maxScore: Annotated[Decimal, Field(gt=0, max_digits=6, decimal_places=2)]
-    status: Status
-    instructions: Annotated[
-        str | None, Field(max_length=2000, description="Short note; post details as a material")
-    ] = None
+    weight: Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)] = Decimal(0)
+    fileIds: Annotated[list[Id], Field(max_length=5)] = []
+    mandatory: bool = False
+
+    @model_validator(mode="after")
+    def schedule(self):
+        if not self.openAt <= self.dueAt <= self.cutoffAt:
+            raise ValueError("openAt <= dueAt <= cutoffAt required")
+        if len(set(self.fileIds)) != len(self.fileIds):
+            raise ValueError("Duplicate attachment")
+        return self
 
 
 class UpdateAssignmentRequest(RequestModel):
     title: Title | None = None
-    dueAt: datetime | None = None
-    status: Status | None = None
+    topicId: Id | None = None
+    instructions: str | None = None
+    mode: Literal["INDIVIDUAL"] | None = None
+    status: Literal["DRAFT", "PUBLISHED", "ARCHIVED"] | None = None
+    openAt: AwareDatetime | None = None
+    dueAt: AwareDatetime | None = None
+    cutoffAt: AwareDatetime | None = None
+    maxScore: Annotated[Decimal, Field(gt=0, max_digits=6, decimal_places=2)] | None = None
+    weight: Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)] | None = None
+    fileIds: Annotated[list[Id], Field(max_length=5)] | None = None
+    mandatory: bool | None = None
+
+    @model_validator(mode="after")
+    def nonnullable(self):
+        for name in self.model_fields_set - {"topicId", "instructions"}:
+            if getattr(self, name) is None:
+                raise ValueError(f"{name} must not be null")
+        return self
 
 
 class Assignment(ResponseModel):
@@ -44,10 +64,13 @@ class Assignment(ResponseModel):
     status: Literal["DRAFT", "PUBLISHED", "ARCHIVED"]
     openAt: Instant
     dueAt: Instant
-    cutoffAt: Instant | None
+    cutoffAt: Instant
     maxScore: float
     weight: float
     version: Version
+    mandatory: bool
+    attachments: list[FileAsset]
+    serverNow: Instant
 
 
 class AssignmentPage(PageMeta):
@@ -55,9 +78,7 @@ class AssignmentPage(PageMeta):
 
 
 class SubmissionRequest(RequestModel):
-    expectedVersion: Annotated[
-        int, Field(ge=0, description="Version you last saw; 0 for the first submission")
-    ]
+    expectedVersion: Annotated[int, Field(ge=0)]
     fileIds: Annotated[list[Id], Field(min_length=1, max_length=5)]
 
 

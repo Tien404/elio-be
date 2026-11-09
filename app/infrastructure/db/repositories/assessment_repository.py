@@ -1,18 +1,13 @@
 """T-SQL for assignments (submission boxes) and individual submissions. Never commits."""
 
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any
 
 from app.domain.entities import Assignment, PublishStatus
 from app.infrastructure.db.sql import Sql
 
-# The schema requires a cutoff after the due date; the MVP accepts late work without
-# limit, so the cutoff is "never" (the largest DATETIMEOFFSET value).
-NO_CUTOFF = "9999-12-31T23:59:59.9999999+00:00"
-
 _ASSIGNMENT_SELECT = """SELECT a.activity_id, a.offering_id, a.topic_id, a.title, a.max_score,
-        a.status, a.version, x.instructions, x.open_at, x.due_at, x.cutoff_at
+        a.status, a.version, a.weight_pct, a.is_mandatory, x.instructions, x.open_at, x.due_at, x.cutoff_at
     FROM dbo.activities AS a
     JOIN dbo.assignments AS x ON x.activity_id = a.activity_id"""
 
@@ -41,34 +36,28 @@ class AssessmentRepository:
         return self.sql.scalar("SELECT CAST(SYSUTCDATETIME() AS DATETIMEOFFSET(7))")
 
     # ------------------------------------------------------------- assignments
-    def insert_assignment(
-        self,
-        *,
-        offering_id: int,
-        topic_id: int,
-        title: str,
-        instructions: str | None,
-        due_at: datetime,
-        max_score: Decimal,
-        status: PublishStatus,
-    ) -> int:
+    def insert_assignment(self, *, offering_id, data) -> int:
         activity_id = self.sql.scalar(
-            """INSERT dbo.activities (offering_id, topic_id, activity_type, title, max_score, status)
-               OUTPUT INSERTED.activity_id VALUES (?, ?, 'ASSIGNMENT', ?, ?, ?)""",
+            """INSERT dbo.activities (offering_id, topic_id, activity_type, title, max_score,
+                   weight_pct, is_mandatory, status)
+               OUTPUT INSERTED.activity_id VALUES (?, ?, 'ASSIGNMENT', ?, ?, ?, ?, ?)""",
             offering_id,
-            topic_id,
-            title,
-            max_score,
-            str(status),
+            data["topicId"],
+            data["title"],
+            data["maxScore"],
+            data["weight"],
+            data["mandatory"],
+            data["status"],
         )
         self.sql.execute(
             """INSERT dbo.assignments (activity_id, instructions, open_at, due_at, cutoff_at)
-               VALUES (?, ?, SYSUTCDATETIME(), CAST(? AS DATETIMEOFFSET(7)),
+               VALUES (?, ?, CAST(? AS DATETIMEOFFSET(7)), CAST(? AS DATETIMEOFFSET(7)),
                        CAST(? AS DATETIMEOFFSET(7)))""",
             activity_id,
-            instructions or "",
-            _utc(due_at),
-            NO_CUTOFF,
+            data["instructions"] or "",
+            _utc(data["openAt"]),
+            _utc(data["dueAt"]),
+            _utc(data["cutoffAt"]),
         )
         return activity_id
 
@@ -101,19 +90,55 @@ class AssessmentRepository:
         )
         return rows, total
 
-    def update_assignment(self, assignment: Assignment) -> None:
+    def update_assignment(self, assignment_id, data):
         self.sql.execute(
-            """UPDATE dbo.activities SET title = ?, status = ?, version = version + 1
-               WHERE activity_id = ?""",
-            assignment.title,
-            str(assignment.status),
-            assignment.assignment_id,
+            """UPDATE dbo.activities SET title=?, topic_id=?, max_score=?, weight_pct=?,
+                   is_mandatory=?, status=?, version=version+1 WHERE activity_id=?""",
+            data["title"],
+            data["topicId"],
+            data["maxScore"],
+            data["weight"],
+            data["mandatory"],
+            data["status"],
+            assignment_id,
         )
         self.sql.execute(
-            """UPDATE dbo.assignments SET due_at = CAST(? AS DATETIMEOFFSET(7))
-               WHERE activity_id = ?""",
-            _utc(assignment.due_at),
-            assignment.assignment_id,
+            """UPDATE dbo.assignments SET instructions=?, open_at=CAST(? AS DATETIMEOFFSET(7)),
+                   due_at=CAST(? AS DATETIMEOFFSET(7)), cutoff_at=CAST(? AS DATETIMEOFFSET(7))
+               WHERE activity_id=?""",
+            data["instructions"] or "",
+            _utc(data["openAt"]),
+            _utc(data["dueAt"]),
+            _utc(data["cutoffAt"]),
+            assignment_id,
+        )
+
+    def attachment_ids(self, assignment_id):
+        return [
+            r["file_id"]
+            for r in self.sql.all(
+                "SELECT file_id FROM dbo.assignment_attachments WHERE assignment_id=? ORDER BY attachment_no",
+                assignment_id,
+            )
+        ]
+
+    def set_attachments(self, assignment_id, file_ids):
+        self.sql.execute("DELETE dbo.assignment_attachments WHERE assignment_id=?", assignment_id)
+        for number, file_id in enumerate(file_ids, 1):
+            self.sql.execute(
+                "INSERT dbo.assignment_attachments (assignment_id, attachment_no, file_id) VALUES (?, ?, ?)",
+                assignment_id,
+                number,
+                file_id,
+            )
+
+    def has_grade(self, assignment_id):
+        return bool(
+            self.sql.scalar(
+                """SELECT COUNT(*) FROM dbo.grades AS g JOIN dbo.submissions AS s
+               ON s.submission_id=g.submission_id WHERE s.assignment_id=?""",
+                assignment_id,
+            )
         )
 
     # ------------------------------------------------------------- submissions
@@ -215,4 +240,6 @@ def assignment_from_row(row: dict[str, Any]) -> Assignment:
         status=PublishStatus(row["status"]),
         instructions=row["instructions"] or None,
         version=row["version"],
+        open_at=row["open_at"],
+        cutoff_at=row["cutoff_at"],
     )

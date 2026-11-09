@@ -3,7 +3,6 @@
 Python/FastAPI · SQL Server · pyodbc
 
 - [Hướng dẫn triển khai](docs/GUIDE.md): kiến trúc, nghiệp vụ, database, thứ tự làm và contract cần làm rõ.
-- [API Explorer](docs/api-explorer.html):78 operations,44 ưu tiên MVP; request, quyền, response và service tương ứng.
 
 ## Cài đặt
 
@@ -41,8 +40,6 @@ python -m scripts.check_database
 Check chỉ đọc, exit0 khi kết nối/check thành công; exit1 khi chưa sẵn sàng. Không tự tạo schema.
 
 ## Schema (T-SQL)
-
-Scripts trong `sql/migrations/` (000–005, 38 bảng theo [logical model](app/contracts/logical-model.json)), mỗi file một transaction, chạy lại an toàn (ghi vào `dbo.schema_migrations`).
 
 ```powershell
 # Windows login, instance mặc định -> tạo elio_dev rồi áp dụng migrations

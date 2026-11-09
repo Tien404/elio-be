@@ -43,9 +43,9 @@ def test_topics_get_next_position(api):
     assert _topic(c.prof, oid)["position"] == 1
     assert _topic(c.prof, oid, "Week 2")["position"] == 2
     taken = c.prof.post(f"/api/v1/offerings/{oid}/topics", json={"title": "X", "position": 1})
-    assert taken.status_code == 409 and taken.json()["code"] == "POSITION_TAKEN"
+    assert taken.status_code == 201 and taken.json()["position"] == 1
     titles = [t["title"] for t in c.student.get(f"/api/v1/offerings/{oid}/topics").json()["items"]]
-    assert titles == ["Week 1", "Week 2"]
+    assert titles == ["X", "Week 1", "Week 2"]
 
 
 def test_upload_publish_and_download_file_material(api):

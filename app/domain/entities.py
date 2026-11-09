@@ -49,6 +49,7 @@ class CourseState(StrEnum):
 class CourseRole(StrEnum):
     STUDENT = "STUDENT"
     PRIMARY_INSTRUCTOR = "PRIMARY_INSTRUCTOR"
+    CO_INSTRUCTOR = "CO_INSTRUCTOR"
 
 
 class MembershipStatus(StrEnum):
@@ -179,11 +180,13 @@ class CourseMembership:
 
 
 class MaterialKind(StrEnum):
+    TEXT = "TEXT"
     FILE = "FILE"
     LINK = "LINK"
 
 
 class PublishStatus(StrEnum):
+    ARCHIVED = "ARCHIVED"
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
 
@@ -238,9 +241,19 @@ class Assignment:
     instructions: str | None = None
     version: int = 1
 
-    def is_open(self) -> bool:
-        """Accepts submissions once published; late work is still accepted (marked late)."""
-        return self.status == PublishStatus.PUBLISHED
+    open_at: datetime | None = None
+    cutoff_at: datetime | None = None
+
+    def is_open(self, at: datetime | None = None) -> bool:
+        if self.status != PublishStatus.PUBLISHED:
+            return False
+        if at is None:
+            return False
+        return (
+            self.open_at is not None
+            and self.cutoff_at is not None
+            and self.open_at <= at <= self.cutoff_at
+        )
 
     def is_late(self, at: datetime) -> bool:
         return at > self.due_at

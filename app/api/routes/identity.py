@@ -10,12 +10,14 @@ from app.api.dependencies import (
     VersionDep,
     clear_session_cookie,
     mutation_session_allow_restricted,
+    session_allow_restricted,
     set_etag,
     set_session_cookie,
 )
 from app.api.schemas.common import ActionResult
 from app.api.schemas.identity import (
     ChangePasswordRequest,
+    IdentityView,
     LoginRequest,
     MeView,
     SessionView,
@@ -110,3 +112,13 @@ def change_password(
     # Every session (this one included) is revoked: the client must sign in again.
     clear_session_cookie(response, settings)
     return result
+
+
+@router.get("/auth/session", operation_id="getCurrentSession", response_model=IdentityView)
+def get_current_session(
+    session: Annotated[SessionContext, Depends(session_allow_restricted)],
+    response: Response,
+    service: AuthServiceDep,
+):
+    response.headers["Cache-Control"] = "no-store"
+    return service.restore_identity(session=session)
