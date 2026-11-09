@@ -60,7 +60,7 @@ class ChangePasswordRequest(RequestModel):
 
 
 class SignUpRequest(RequestModel):
-    """Public student self sign-up (team MVP addition, not in the OpenAPI contract)."""
+    """Public student registration."""
 
     email: Email
     displayName: DisplayName

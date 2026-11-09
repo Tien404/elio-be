@@ -1,5 +1,3 @@
-"""MVP step 6+7: SubmissionService — submission boxes, file submissions, late flag."""
-
 from datetime import UTC, datetime, timedelta
 
 from app.services import submission_service
@@ -113,11 +111,11 @@ def test_late_submission_is_flagged(api):
     with api.app.state.database.transaction() as connection:  # move the deadline into the past
         cursor = connection.cursor()
         cursor.execute(
-            """UPDATE dbo.assignments
-               SET open_at = DATEADD(DAY, -2, SYSUTCDATETIME()),
-                   due_at = DATEADD(DAY, -1, SYSUTCDATETIME())
-               WHERE activity_id = ?""",
-            box["id"],
+            """UPDATE assignments
+               SET open_at = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL -2 DAY),
+                   due_at = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL -1 DAY)
+               WHERE activity_id = %s""",
+            (box["id"],),
         )
         cursor.close()
     file_id = _upload(c.student, c, box["id"]).json()["id"]

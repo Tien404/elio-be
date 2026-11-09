@@ -1,5 +1,3 @@
-"""MVP step 5: ContentService — topics, file/link materials, private downloads."""
-
 import hashlib
 
 import pytest

@@ -6516,7 +6516,7 @@
           "decidedAt"
         ],
         "title": "Registration",
-        "description": "A student's request to take a catalog course (team MVP flow)."
+        "description": "A student's request to take a catalog course."
       },
       "RegistrationPage": {
         "properties": {
@@ -6897,7 +6897,7 @@
           "password"
         ],
         "title": "SignUpRequest",
-        "description": "Public student self sign-up (team MVP addition, not in the OpenAPI contract)."
+        "description": "Public student registration."
       },
       "StudentList": {
         "properties": {

@@ -13,7 +13,7 @@ import sys
 
 from app.core.config import Settings
 from app.core.errors import ApiError
-from app.infrastructure.db.connection import DatabaseUnavailable, PyodbcDatabase
+from app.infrastructure.db.connection import DatabaseUnavailable, MySQLDatabase
 from app.services.auth_service import AuthService
 
 
@@ -31,7 +31,7 @@ def main() -> int:
             return 1
 
     settings = Settings()
-    service = AuthService(PyodbcDatabase(settings), settings)
+    service = AuthService(MySQLDatabase(settings), settings)
     try:
         user_id = service.bootstrap_admin(
             email=args.email, display_name=args.name, password=password

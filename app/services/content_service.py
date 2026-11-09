@@ -160,9 +160,7 @@ class ContentService:
                 require_teacher(CourseRepository(sql), actor, offering_id)
                 repo = ContentRepository(sql)
                 next_position = repo.next_topic_position(offering_id)
-                count = sql.scalar(
-                    "SELECT COUNT(*) FROM dbo.topics WHERE offering_id=?", offering_id
-                )
+                count = sql.scalar("SELECT COUNT(*) FROM topics WHERE offering_id=%s", offering_id)
                 target = position if position is not None else count + 1
                 if not 1 <= target <= count + 1:
                     raise ApiError(400, "INVALID_POSITION", "Topic order must fit the topic list.")
@@ -202,7 +200,7 @@ class ContentService:
         content_type: str | None,
         stream: BinaryIO,
     ) -> dict[str, Any]:
-        """Upload step 1 for materials: a STAGING file of the class (24h to attach)."""
+        """Stage a file for a class material. Unattached files expire after 24 hours."""
         if purpose != "MATERIAL":
             raise ApiError(400, "INVALID_REQUEST", "Use purpose MATERIAL or SUBMISSION.")
         return stage_file(
@@ -246,7 +244,7 @@ class ContentService:
                     raise not_found("File")
             elif file["purpose"] == "ASSIGNMENT_ATTACHMENT":
                 assignment_id = sql.scalar(
-                    "SELECT assignment_id FROM dbo.assignment_attachments WHERE file_id=?", file_id
+                    "SELECT assignment_id FROM assignment_attachments WHERE file_id=%s", file_id
                 )
                 row = (
                     AssessmentRepository(sql).get_assignment(assignment_id)
@@ -393,7 +391,7 @@ class ContentService:
                 if not title.strip():
                     raise ApiError(400, "INVALID_REQUEST", "Title must not be blank.")
                 count = sql.scalar(
-                    "SELECT COUNT(*) FROM dbo.topics WHERE offering_id=?", topic.offering_id
+                    "SELECT COUNT(*) FROM topics WHERE offering_id=%s", topic.offering_id
                 )
                 target = position or topic.position
                 if not 1 <= target <= count:
@@ -426,7 +424,6 @@ class ContentService:
         with self.database.read_connection() as connection:
             return file_view(ContentRepository(Sql(connection)).get_file(file_id))
 
-    # ------------------------------------------- placeholders behind 501 routes
     def create_announcement(self, **kwargs: object):
         raise FeatureNotImplemented("ContentService.create_announcement")
 

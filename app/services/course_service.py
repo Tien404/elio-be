@@ -1,9 +1,3 @@
-"""CourseService from the class diagram: catalog courses, classes (offerings), enrollment.
-
-Methods still raising FeatureNotImplemented back the 501 placeholder routes; they are
-replaced one by one as the MVP steps are built.
-"""
-
 import re
 import secrets
 import string
@@ -238,7 +232,7 @@ class CourseService:
                     details={"courseCode": course.course_code, "leadId": lead_id},
                 )
                 sql.execute(
-                    "UPDATE dbo.course_offerings SET learning_information=? WHERE offering_id=?",
+                    "UPDATE course_offerings SET learning_information=%s WHERE offering_id=%s",
                     learning_information,
                     offering.offering_id,
                 )
@@ -520,7 +514,6 @@ class CourseService:
             raise forbidden()
         return offering
 
-    # ------------------------------------------- placeholders behind 501 routes
     def add_co_instructor(self, **kwargs: object):
         raise FeatureNotImplemented("CourseService.add_co_instructor")
 
@@ -573,8 +566,8 @@ class CourseService:
         writable = view["status"] != "ARCHIVED"
         lead_account = sql.one(
             """SELECT u.user_id, u.full_name, u.status, u.role, u.must_change_pwd
-            FROM dbo.course_memberships AS m JOIN dbo.users AS u ON u.user_id=m.user_id
-            WHERE m.membership_id=?""",
+            FROM course_memberships AS m JOIN users AS u ON u.user_id=m.user_id
+            WHERE m.membership_id=%s""",
             view["leadMembershipId"],
         )
         view.update(
@@ -612,12 +605,12 @@ class CourseService:
         )
         if membership and membership.is_active():
             view["totalMaterials"] = sql.scalar(
-                """SELECT COUNT(*) FROM dbo.materials AS m JOIN dbo.topics AS t ON t.topic_id=m.topic_id WHERE t.offering_id=? AND m.status='PUBLISHED'""",
+                "SELECT COUNT(*) FROM materials AS m JOIN topics AS t ON t.topic_id=m.topic_id WHERE t.offering_id=%s AND m.status='PUBLISHED'",
                 view["id"],
             )
             view["completedMaterials"] = (
                 sql.scalar(
-                    """SELECT COUNT(*) FROM dbo.material_completions AS c JOIN dbo.materials AS m ON m.material_id=c.material_id JOIN dbo.topics AS t ON t.topic_id=m.topic_id WHERE t.offering_id=? AND m.status='PUBLISHED' AND c.student_id=?""",
+                    "SELECT COUNT(*) FROM material_completions AS c JOIN materials AS m ON m.material_id=c.material_id JOIN topics AS t ON t.topic_id=m.topic_id WHERE t.offering_id=%s AND m.status='PUBLISHED' AND c.student_id=%s",
                     view["id"],
                     actor.user_id,
                 )
@@ -723,12 +716,12 @@ class CourseService:
             sql = Sql(connection)
             repo = CourseRepository(sql)
             self._require_member(repo, actor, offering_id)
-            where = "m.offering_id=? AND m.status='ACTIVE' AND m.course_role <> 'STUDENT'"
+            where = "m.offering_id=%s AND m.status='ACTIVE' AND m.course_role <> 'STUDENT'"
             total = sql.scalar(
-                f"SELECT COUNT(*) FROM dbo.course_memberships AS m WHERE {where}", offering_id
+                f"SELECT COUNT(*) FROM course_memberships AS m WHERE {where}", offering_id
             )
             rows = sql.all(
-                f"""SELECT m.*,u.full_name,u.status AS account_status,u.role AS account_role,u.must_change_pwd FROM dbo.course_memberships AS m JOIN dbo.users AS u ON u.user_id=m.user_id WHERE {where} ORDER BY m.membership_id OFFSET ? ROWS FETCH NEXT ? ROWS ONLY""",
+                f"SELECT m.*,u.full_name,u.status AS account_status,u.role AS account_role,u.must_change_pwd FROM course_memberships AS m JOIN users AS u ON u.user_id=m.user_id WHERE {where} ORDER BY m.membership_id LIMIT %s, %s",
                 offering_id,
                 (page - 1) * page_size,
                 page_size,
@@ -814,15 +807,15 @@ class CourseService:
     def get_dashboard(self, *, actor):
         with self.database.transaction() as connection:
             sql = Sql(connection)
-            now = sql.scalar("SELECT CAST(SYSUTCDATETIME() AS DATETIMEOFFSET(7))")
+            now = sql.scalar("SELECT UTC_TIMESTAMP(6)")
             if actor.role == SystemRole.ADMIN:
                 counts = {
-                    "accounts": sql.scalar("SELECT COUNT(*) FROM dbo.users"),
+                    "accounts": sql.scalar("SELECT COUNT(*) FROM users"),
                     "lockedAccounts": sql.scalar(
-                        "SELECT COUNT(*) FROM dbo.users WHERE status='LOCKED'"
+                        "SELECT COUNT(*) FROM users WHERE status='LOCKED'"
                     ),
                     "openSections": sql.scalar(
-                        "SELECT COUNT(*) FROM dbo.course_offerings WHERE state='OPEN'"
+                        "SELECT COUNT(*) FROM course_offerings WHERE state='OPEN'"
                     ),
                 }
                 return {
@@ -834,8 +827,8 @@ class CourseService:
                 }
             rows = sql.all(
                 f"""{_OFFERING_SUMMARY_SELECT}
-                WHERE EXISTS (SELECT 1 FROM dbo.course_memberships AS me WHERE me.offering_id=o.offering_id AND me.user_id=? AND me.status='ACTIVE')
-                AND (o.state <> 'DRAFT' OR EXISTS (SELECT 1 FROM dbo.course_memberships AS me WHERE me.offering_id=o.offering_id AND me.user_id=? AND me.course_role <> 'STUDENT' AND me.status='ACTIVE'))
+                WHERE EXISTS (SELECT 1 FROM course_memberships AS me WHERE me.offering_id=o.offering_id AND me.user_id=%s AND me.status='ACTIVE')
+                AND (o.state <> 'DRAFT' OR EXISTS (SELECT 1 FROM course_memberships AS me WHERE me.offering_id=o.offering_id AND me.user_id=%s AND me.course_role <> 'STUDENT' AND me.status='ACTIVE'))
                 ORDER BY o.semester DESC,o.offering_id""",
                 actor.user_id,
                 actor.user_id,
@@ -844,10 +837,10 @@ class CourseService:
             assignments = sql.all(
                 """SELECT a.activity_id AS id,a.offering_id AS offeringId,a.title,
                     x.due_at AS dueAt,x.cutoff_at AS cutoffAt,
-                    CASE WHEN EXISTS (SELECT 1 FROM dbo.submissions AS s WHERE s.assignment_id=a.activity_id AND s.student_id=? AND s.status='SUBMITTED') THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS submitted
-                FROM dbo.activities AS a JOIN dbo.assignments AS x ON x.activity_id=a.activity_id
-                JOIN dbo.course_offerings AS o ON o.offering_id=a.offering_id
-                JOIN dbo.course_memberships AS me ON me.offering_id=o.offering_id AND me.user_id=? AND me.status='ACTIVE'
+                    CASE WHEN EXISTS (SELECT 1 FROM submissions AS s WHERE s.assignment_id=a.activity_id AND s.student_id=%s AND s.status='SUBMITTED') THEN 1 ELSE 0 END AS submitted
+                FROM activities AS a JOIN assignments AS x ON x.activity_id=a.activity_id
+                JOIN course_offerings AS o ON o.offering_id=a.offering_id
+                JOIN course_memberships AS me ON me.offering_id=o.offering_id AND me.user_id=%s AND me.status='ACTIVE'
                 WHERE o.state='OPEN' AND a.status='PUBLISHED'
                 ORDER BY x.due_at,a.activity_id""",
                 actor.user_id,

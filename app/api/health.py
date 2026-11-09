@@ -4,9 +4,9 @@ from fastapi import APIRouter, Request
 
 from app.core.errors import problem
 from app.infrastructure.db.connection import DatabaseUnavailable
+from app.infrastructure.db.sql import Sql
 
 router = APIRouter(tags=["Health"])
-
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "sql" / "migrations"
 
 
@@ -25,23 +25,18 @@ def ready(request: Request):
     try:
         database.check_connection()
         with database.read_connection() as connection:
-            cursor = connection.cursor()
-            try:
-                has_table = cursor.execute(
-                    "SELECT OBJECT_ID(N'dbo.schema_migrations', N'U')"
-                ).fetchone()[0]
-                applied = (
-                    {
-                        row[0]
-                        for row in cursor.execute(
-                            "SELECT migration_id FROM dbo.schema_migrations"
-                        ).fetchall()
-                    }
-                    if has_table
-                    else set()
-                )
-            finally:
-                cursor.close()
+            sql = Sql(connection)
+            has_table = sql.scalar(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'schema_migrations'"
+            )
+            applied = (
+                {
+                    row["migration_id"]
+                    for row in sql.all("SELECT migration_id FROM schema_migrations")
+                }
+                if has_table
+                else set()
+            )
     except DatabaseUnavailable:
         return problem(
             503, "DATABASE_UNAVAILABLE", "Database connection is unavailable.", "/health/ready"
@@ -53,7 +48,7 @@ def ready(request: Request):
         return problem(
             503,
             "SCHEMA_NOT_INSTALLED",
-            f"{len(missing)} migration(s) not applied; run sql/apply_migrations.ps1.",
+            f"{len(missing)} migration(s) not applied; run python -m scripts.migrate.",
             "/health/ready",
         )
     return {"status": "ready", "migrations": len(applied)}

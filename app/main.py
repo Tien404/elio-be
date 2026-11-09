@@ -6,7 +6,7 @@ from app.api.health import router as health_router
 from app.api.routes import ROUTERS
 from app.core.config import Settings
 from app.core.errors import install_error_handlers
-from app.infrastructure.db.connection import PyodbcDatabase
+from app.infrastructure.db.connection import MySQLDatabase
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -15,7 +15,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.settings = settings
-        application.state.database = PyodbcDatabase(settings)
+        application.state.database = MySQLDatabase(settings)
         yield
 
     app = FastAPI(

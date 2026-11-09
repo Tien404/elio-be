@@ -1,9 +1,6 @@
-"""Temporary-password delivery (contract gap API-G05).
+"""Write temporary passwords to private files for operator delivery.
 
-The real channel (email, printed slip, ...) is not decided. Until then each issued temporary
-password is written to a private file `<outbox>/<account-id>.txt` that only the operator can
-read. Passwords are never logged, returned by the API, or stored in the database in clear.
-Replace `deliver` once the team agrees on the channel.
+Each file is stored at `<outbox>/<account-id>.txt` and is readable only by the operator.
 """
 
 import os

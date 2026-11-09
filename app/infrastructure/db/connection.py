@@ -1,69 +1,78 @@
-import struct
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
 from importlib import import_module
+from urllib.parse import unquote, urlsplit
 
 from app.core.config import Settings
 
-SQL_SS_TIMESTAMPOFFSET = -155
-
-
-def _datetimeoffset(value: bytes | None) -> datetime | None:
-    """pyodbc has no native DATETIMEOFFSET support; decode the ODBC struct to an aware UTC datetime."""
-    if value is None:
-        return None
-    year, month, day, hour, minute, second, fraction, tz_hour, tz_minute = struct.unpack(
-        "<6hI2h", value
-    )
-    local = datetime(year, month, day, hour, minute, second, fraction // 1000)
-    offset = timedelta(hours=tz_hour, minutes=tz_minute)
-    return (local - offset).replace(tzinfo=timezone.utc)
-
 
 class DatabaseUnavailable(RuntimeError):
-    """Safe connection/probe error; never expose ODBC diagnostics to HTTP clients."""
+    pass
 
 
 def load_driver():
-    # Load ODBC only when opening a database connection.
     try:
-        return import_module("pyodbc")
+        return import_module("pymysql")
     except (ImportError, OSError):
-        raise DatabaseUnavailable("ODBC runtime is unavailable.") from None
+        raise DatabaseUnavailable("MySQL driver is unavailable.") from None
 
 
-class PyodbcDatabase:
+def connection_options(url: str) -> dict:
+    try:
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme != "mysql"
+            or not parsed.hostname
+            or not parsed.username
+            or not parsed.path.strip("/")
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError
+        return {
+            "host": parsed.hostname,
+            "port": parsed.port or 3306,
+            "user": unquote(parsed.username),
+            "password": unquote(parsed.password or ""),
+            "database": unquote(parsed.path.lstrip("/")),
+        }
+    except ValueError:
+        raise DatabaseUnavailable(
+            "Configure ELIO_DATABASE_URL as mysql://user:password@host:port/database."
+        ) from None
+
+
+class MySQLDatabase:
     def __init__(self, settings: Settings):
         self.settings = settings
 
     def _connect(self, *, readonly: bool):
+        options = connection_options(self.settings.database_url.get_secret_value())
         driver = load_driver()
-        value = self.settings.odbc_connection_string.get_secret_value()
-        if not value.strip():
-            raise DatabaseUnavailable("SQL Server connection is not configured.")
         connection = None
         try:
             connection = driver.connect(
-                value,
+                **options,
+                charset="utf8mb4",
                 autocommit=False,
-                readonly=readonly,
-                timeout=self.settings.db_connect_timeout_seconds,
+                connect_timeout=self.settings.db_connect_timeout_seconds,
+                read_timeout=self.settings.db_query_timeout_seconds,
+                write_timeout=self.settings.db_query_timeout_seconds,
+                init_command="SET time_zone = '+00:00'",
             )
-            connection.timeout = self.settings.db_query_timeout_seconds
-            if hasattr(connection, "add_output_converter"):
-                connection.add_output_converter(SQL_SS_TIMESTAMPOFFSET, _datetimeoffset)
+            with connection.cursor() as cursor:
+                cursor.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+                cursor.execute("SET SESSION group_concat_max_len = 4096")
+                cursor.execute(
+                    "SET TRANSACTION READ ONLY" if readonly else "SET TRANSACTION READ WRITE"
+                )
             return connection
         except driver.Error:
             if connection is not None:
-                try:
-                    connection.close()
-                except driver.Error:
-                    pass
-            raise DatabaseUnavailable("SQL Server connection is unavailable.") from None
+                connection.close()
+            raise DatabaseUnavailable("MySQL connection is unavailable.") from None
 
     @contextmanager
     def transaction(self):
-        """One connection per use case; repositories must never commit individually."""
         connection = self._connect(readonly=False)
         try:
             yield connection
@@ -76,7 +85,6 @@ class PyodbcDatabase:
 
     @contextmanager
     def read_connection(self):
-        """Read intent for probes/queries; always end the transaction and close."""
         connection = self._connect(readonly=True)
         try:
             yield connection
@@ -90,20 +98,10 @@ class PyodbcDatabase:
         driver = load_driver()
         try:
             with self.read_connection() as connection:
-                cursor = connection.cursor()
-                try:
-                    row = cursor.execute("SELECT 1").fetchone()
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                    row = cursor.fetchone()
                     if row is None or row[0] != 1:
-                        raise DatabaseUnavailable("SQL Server probe failed.")
-                finally:
-                    cursor.close()
+                        raise DatabaseUnavailable("MySQL probe failed.")
         except driver.Error:
-            raise DatabaseUnavailable("SQL Server probe failed.") from None
-
-
-class PyodbcRepository:
-    def __init__(self, database: PyodbcDatabase):
-        self.database = database
-
-    def transaction(self):
-        return self.database.transaction()
+            raise DatabaseUnavailable("MySQL probe failed.") from None

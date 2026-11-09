@@ -1,16 +1,6 @@
-"""Thin helpers over a pyodbc connection: explicit row mapping, ? parameters, cursor always closed.
-
-Repositories receive a `Sql` bound to the use case's single transaction connection and
-never commit. Diagnostics from the driver never leave this layer except as constraint names
-used internally to translate integrity errors into business errors.
-"""
-
 import re
+from datetime import UTC, datetime
 from typing import Any
-
-_CONSTRAINT = re.compile(r"constraint '([^']+)'|unique index '([^']+)'", re.IGNORECASE)
-# 2627 unique constraint, 2601 unique index, 547 FK/CHECK
-_UNIQUE_CODES = ("(2627)", "(2601)")
 
 
 class Sql:
@@ -20,17 +10,29 @@ class Sql:
     def _run(self, statement: str, params: tuple):
         cursor = self.connection.cursor()
         try:
-            cursor.execute(statement, *params)
+            values = tuple(
+                value.astimezone(UTC).replace(tzinfo=None)
+                if isinstance(value, datetime) and value.tzinfo
+                else value
+                for value in params
+            )
+            cursor.execute(statement, values or None)
             return cursor
         except BaseException:
             cursor.close()
             raise
 
+    @staticmethod
+    def _row(cursor, row) -> dict[str, Any]:
+        return {
+            column[0]: value.replace(tzinfo=UTC) if isinstance(value, datetime) else value
+            for column, value in zip(cursor.description, row)
+        }
+
     def all(self, statement: str, *params: Any) -> list[dict[str, Any]]:
         cursor = self._run(statement, params)
         try:
-            names = [column[0] for column in cursor.description]
-            return [dict(zip(names, row)) for row in cursor.fetchall()]
+            return [self._row(cursor, row) for row in cursor.fetchall()]
         finally:
             cursor.close()
 
@@ -38,10 +40,7 @@ class Sql:
         cursor = self._run(statement, params)
         try:
             row = cursor.fetchone()
-            if row is None:
-                return None
-            names = [column[0] for column in cursor.description]
-            return dict(zip(names, row))
+            return None if row is None else self._row(cursor, row)
         finally:
             cursor.close()
 
@@ -49,7 +48,15 @@ class Sql:
         cursor = self._run(statement, params)
         try:
             row = cursor.fetchone()
-            return None if row is None else row[0]
+            value = None if row is None else row[0]
+            return value.replace(tzinfo=UTC) if isinstance(value, datetime) else value
+        finally:
+            cursor.close()
+
+    def insert(self, statement: str, *params: Any) -> int:
+        cursor = self._run(statement, params)
+        try:
+            return cursor.lastrowid
         finally:
             cursor.close()
 
@@ -62,17 +69,14 @@ class Sql:
 
 
 def violated_constraint(error: BaseException) -> str | None:
-    """Name of the violated constraint/index for an integrity error, else None (internal use)."""
     text = " ".join(str(arg) for arg in getattr(error, "args", ()))
-    match = _CONSTRAINT.search(text)
-    return (match.group(1) or match.group(2)) if match else None
+    match = re.search(r"(?:for key|CONSTRAINT) [`'\"]([^`'\"]+)[`'\"]", text, re.IGNORECASE)
+    return match[1].rsplit(".", 1)[-1] if match else None
 
 
 def is_unique_violation(error: BaseException) -> bool:
-    text = " ".join(str(arg) for arg in getattr(error, "args", ()))
-    return any(code in text for code in _UNIQUE_CODES)
+    return bool(error.args and error.args[0] == 1062)
 
 
 def like_literal(text: str) -> str:
-    """Escape LIKE wildcards so user input is matched literally (wrap with % yourself)."""
-    return text.replace("[", "[[]").replace("%", "[%]").replace("_", "[_]")
+    return text.replace("!", "!!").replace("%", "!%").replace("_", "!_")

@@ -420,7 +420,7 @@ class SubmissionService:
             if row["student_id"] != actor.user_id and not is_teacher(member):
                 raise not_found("Submission")
             versions = sql.all(
-                """SELECT version_no,submitted_by,submitted_at,is_late,receipt_code FROM dbo.submission_versions WHERE submission_id=? ORDER BY version_no DESC""",
+                "SELECT version_no,submitted_by,submitted_at,is_late,receipt_code FROM submission_versions WHERE submission_id=%s ORDER BY version_no DESC",
                 submission_id,
             )
             history = []
@@ -431,7 +431,7 @@ class SubmissionService:
                 ids = [
                     f["file_id"]
                     for f in sql.all(
-                        "SELECT file_id FROM dbo.submission_files WHERE submission_id=? AND version_no=? ORDER BY file_no",
+                        "SELECT file_id FROM submission_files WHERE submission_id=%s AND version_no=%s ORDER BY file_no",
                         submission_id,
                         v["version_no"],
                     )
@@ -497,7 +497,6 @@ class SubmissionService:
 
         return check
 
-    # ------------------------------------------- placeholders behind 501 routes
     def create_group(self, **kwargs: object):
         raise FeatureNotImplemented("SubmissionService.create_group")
 

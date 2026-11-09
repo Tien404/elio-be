@@ -76,11 +76,11 @@ def test_cutoff_attachments_co_instructor_and_removed_owner(api):
     c = class_with_student(api)
     co = create_user(api, c.admin, "co@elio.test", "INSTRUCTOR")
     with api.app.state.database.transaction() as connection:
-        connection.cursor().execute(
-            "INSERT dbo.course_memberships (offering_id,user_id,course_role) VALUES (?,?,'CO_INSTRUCTOR')",
-            c.offering_id,
-            co.account_id,
-        ).close()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO course_memberships (offering_id,user_id,course_role) VALUES (%s,%s,'CO_INSTRUCTOR')",
+                (c.offering_id, co.account_id),
+            )
     url = f"/api/v1/offerings/{c.offering_id}"
     team = co.get(f"{url}/teaching-team")
     assert team.status_code == 200 and len(team.json()["items"]) == 2
@@ -122,10 +122,11 @@ def test_cutoff_attachments_co_instructor_and_removed_owner(api):
     sid = confirmed.json()["id"]
     assert co.get(f"/api/v1/submissions/{sid}/history").status_code == 200
     with api.app.state.database.transaction() as connection:
-        connection.cursor().execute(
-            "UPDATE dbo.assignments SET open_at=DATEADD(DAY,-3,SYSUTCDATETIME()),due_at=DATEADD(DAY,-2,SYSUTCDATETIME()),cutoff_at=DATEADD(DAY,-1,SYSUTCDATETIME()) WHERE activity_id=?",
-            aid,
-        ).close()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE assignments SET open_at=DATE_ADD(UTC_TIMESTAMP(6), INTERVAL -3 DAY),due_at=DATE_ADD(UTC_TIMESTAMP(6), INTERVAL -2 DAY),cutoff_at=DATE_ADD(UTC_TIMESTAMP(6), INTERVAL -1 DAY) WHERE activity_id=%s",
+                (aid,),
+            )
     closed = c.student.post(
         "/api/v1/files",
         params={"offeringId": c.offering_id, "purpose": "SUBMISSION", "assignmentId": aid},
@@ -133,10 +134,10 @@ def test_cutoff_attachments_co_instructor_and_removed_owner(api):
     )
     assert closed.status_code == 409, closed.text
     with api.app.state.database.transaction() as connection:
-        connection.cursor().execute(
-            "UPDATE dbo.course_memberships SET status='REMOVED' WHERE offering_id=? AND user_id=?",
-            c.offering_id,
-            c.student.account_id,
-        ).close()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE course_memberships SET status='REMOVED' WHERE offering_id=%s AND user_id=%s",
+                (c.offering_id, c.student.account_id),
+            )
     assert c.student.get(f"/api/v1/submissions/{sid}").status_code == 404
     assert c.student.get(f"/api/v1/files/{file_id}/content").status_code == 404

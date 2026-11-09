@@ -1,5 +1,3 @@
-"""Rules on the class-diagram entities (no database)."""
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

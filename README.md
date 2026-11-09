@@ -1,12 +1,11 @@
 # ELIO Backend
 
-Python/FastAPI · SQL Server · pyodbc
+Python 3.12+ · FastAPI · MySQL 8.4 · PyMySQL.
 
-- [Hướng dẫn triển khai](docs/GUIDE.md): kiến trúc, nghiệp vụ, database, thứ tự làm và contract cần làm rõ.
+## Chuẩn bị
 
-## Cài đặt
-
-Python3.12+. Chạy tại thư mục project:
+Cài Python 3.12+, Docker Desktop và Git. Mở Docker Desktop trước khi chạy database.
+Các lệnh bên dưới chạy trong thư mục backend.
 
 ```sh
 python3.12 -m venv .venv
@@ -14,46 +13,58 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.lock.txt
 python -m pip install --no-deps --no-build-isolation -e .
 cp .env.example .env
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-PowerShell: `py -3.12 -m venv .venv`, `.venv\Scripts\Activate.ps1`, `Copy-Item .env.example .env`.
-Swagger: http://127.0.0.1:8000/docs . ReDoc: http://127.0.0.1:8000/redoc .
+Windows PowerShell: dùng `py -3.12 -m venv .venv`, `.venv\Scripts\Activate.ps1` và `Copy-Item .env.example .env`.
 
-## Kết nối SQL Server
-
-1. Chuẩn bị SQL Server instance và database dev cách ly, ví dụ elio_dev.
-2. Cài [Microsoft ODBC Driver18](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server) đúng kiến trúc; macOS/Linux cần ODBC driver manager. Client Mac ARM64 kết nối SQL Server trên Windows/Linux x64.
-3. Đặt trong .env bằng credentials riêng:
-
-```dotenv
-ELIO_ODBC_CONNECTION_STRING='DRIVER={ODBC Driver 18 for SQL Server};SERVER=tcp:YOUR_HOST,1433;DATABASE=elio_dev;UID=YOUR_APP_USER;PWD=YOUR_PRIVATE_PASSWORD;Encrypt=yes;TrustServerCertificate=no;'
-```
-
-Dùng account ứng dụng giới hạn quyền; schema scripts dùng quyền DDL riêng. Local self-signed certificate có thể dùng TrustServerCertificate=yes chỉ trong dev. Không commit .env hoặc private files.
+## Database
 
 ```sh
-python -c "import pyodbc; print(pyodbc.drivers())"
+docker compose up -d --wait
+python -m scripts.migrate
+python -m scripts.seed
 python -m scripts.check_database
 ```
 
-Check chỉ đọc, exit0 khi kết nối/check thành công; exit1 khi chưa sẵn sàng. Không tự tạo schema.
+Compose chạy MySQL tại `127.0.0.1:3307`, lưu dữ liệu trong volume `mysql_data`.
+Mỗi thành viên chạy database riêng; chia sẻ cấu trúc và dữ liệu mẫu bằng migrations/seed trong Git.
 
-## Schema (T-SQL)
+| Biến trong `.env`        | Giá trị lấy ở đâu                                                               |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| `MYSQL_PASSWORD`         | Tự đặt mật khẩu cho user MySQL `elio`; Compose dùng khi tạo volume lần đầu      |
+| `MYSQL_ROOT_PASSWORD`    | Tự đặt mật khẩu quản trị MySQL; Compose dùng khi tạo volume lần đầu             |
+| `ELIO_DATABASE_URL`      | `mysql://elio:MẬT_KHẨU@127.0.0.1:3307/elio_dev`; mật khẩu khớp `MYSQL_PASSWORD` |
+| `ELIO_PRIVATE_FILES_DIR` | Thư mục lưu file tải lên trên máy chạy backend, mặc định `./data/private`       |
 
-```powershell
-# Windows login, instance mặc định -> tạo elio_dev rồi áp dụng migrations
-powershell -ExecutionPolicy Bypass -File sql/apply_migrations.ps1
-# SQL login / server khác
-powershell -ExecutionPolicy Bypass -File sql/apply_migrations.ps1 -Server "tcp:HOST,1433" -Database elio_dev -User YOUR_DDL_USER
-# Tài khoản dev (CHỈ DB tên chứa "dev"): user 1 admin@elio.local / ElioAdmin@2026
-sqlcmd -S localhost -E -C -I -b -d elio_dev -i sql/seed/dev_seed.sql
-# Tạo tài khoản test với mật khẩu tự chọn (hỏi mật khẩu, tối thiểu 12 ký tự)
-python -m scripts.create_user --email stu1@elio.local --name "Student One" --role STUDENT
-python -m scripts.create_user --email prof1@elio.local --name "Prof One" --role INSTRUCTOR --can-create-course
-# Smoke test (rollback, không để lại dữ liệu)
-sqlcmd -S localhost -E -C -I -b -d elio_dev -i sql/tests/smoke_test.sql
+Nếu mật khẩu trong URL chứa `@`, `#`, `:`, `/` hoặc `%`, URL-encode phần mật khẩu.
+Đổi biến mật khẩu sau khi volume đã tạo không tự đổi mật khẩu bên trong MySQL.
+Không commit `.env` hoặc dữ liệu private. Backend dùng PyMySQL, không cần ODBC.
+
+`python -m scripts.migrate` áp dụng các file `sql/migrations` theo thứ tự và bỏ qua migration đã ghi nhận.
+MySQL DDL không rollback toàn bộ migration; nếu áp dụng bị lỗi, kiểm tra schema trước khi chạy tiếp.
+Dữ liệu mẫu chỉ chạy với database có tên kết thúc bằng `_dev`; chạy lại không đặt lại mật khẩu hoặc tạo trùng lớp mẫu.
+
+| Tài khoản mẫu        | Mật khẩu khi tạo mới |
+| -------------------- | -------------------- |
+| `admin@elio.local`   | `ElioDemo@2026`      |
+| `teacher@elio.local` | `ElioDemo@2026`      |
+| `student@elio.local` | `ElioDemo@2026`      |
+
+Seed tạo lớp Open, học liệu TEXT và bài tập có hạn nộp tương đối với ngày tạo. Join code: `ELIO26`.
+Các tài khoản/mật khẩu này chỉ dùng cho dev local.
+
+## Chạy API
+
+```sh
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
+
+Swagger: http://127.0.0.1:8000/docs . Kiểm tra kết nối/schema: http://127.0.0.1:8000/health/ready .
+Frontend chạy riêng tại `http://localhost:5173`, proxy `/api` sang backend.
+API giữ session cookie và CSRF; các phiên bản ghi dùng contract trong Swagger.
+
+Dừng database bằng `docker compose stop`; chạy lại bằng `docker compose start`.
+`docker compose down` giữ volume; **`docker compose down -v` xóa dữ liệu database**.
 
 ## Kiểm tra
 
@@ -61,5 +72,12 @@ sqlcmd -S localhost -E -C -I -b -d elio_dev -i sql/tests/smoke_test.sql
 python -m pytest -q
 ruff check .
 ruff format --check .
-python -m app.worker --check
 ```
+
+```sh
+docker run -d --name elio-mysql-test -p 127.0.0.1:13307:3306 -e MYSQL_ROOT_PASSWORD=elio_test_root -e MYSQL_DATABASE=elio_test -e MYSQL_USER=elio_test -e MYSQL_PASSWORD=elio_test_password mysql:8.4
+```
+
+Đợi database sẵn sàng. Trong terminal test, đặt `ELIO_DATABASE_URL` và `ELIO_TEST_DATABASE_URL` cùng bằng
+`mysql://elio_test:elio_test_password@127.0.0.1:13307/elio_test`, rồi chạy `python -m scripts.migrate` và `python -m pytest -q`.
+macOS: `export TÊN_BIẾN='giá_trị'`; PowerShell: `$env:TÊN_BIẾN='giá_trị'`.

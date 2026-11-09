@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ELIO_", env_file=".env", extra="ignore")
     environment: Literal["development", "test"] = "development"
-    odbc_connection_string: SecretStr = SecretStr("")
+    database_url: SecretStr = SecretStr("")
     db_connect_timeout_seconds: int = Field(default=2, ge=1, le=30)
     db_query_timeout_seconds: int = Field(default=5, ge=1, le=60)
     private_files_dir: Path = Path("./data/private")
@@ -19,6 +19,5 @@ class Settings(BaseSettings):
     # Browsers accept Secure cookies on http://localhost; set False only for plain-HTTP test clients.
     session_cookie_secure: bool = True
 
-    # Contract gap API-G05: the temporary-password delivery channel is not decided yet.
-    # Until it is, temporary passwords are written to private files here (never logged/returned).
+    # Store temporary passwords in private files for operator delivery.
     credential_outbox_dir: Path = Path("./data/private/credential-outbox")

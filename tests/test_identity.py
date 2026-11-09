@@ -1,5 +1,3 @@
-"""B1 identity on real SQL Server: login, sessions, CSRF, /me, passwords, admin accounts."""
-
 from fastapi.testclient import TestClient
 
 from tests.helpers import (

@@ -1,5 +1,3 @@
-"""MVP step 2: CourseService.createOffering (POST /offerings)."""
-
 from tests.helpers import bootstrap_admin, create_user
 
 URL = "/api/v1/offerings"

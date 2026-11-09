@@ -13,8 +13,6 @@ data/
 .coverage
 htmlcov/
 
-# SQL Server database/backup artifacts
-*.bak
-*.trn
-*.mdf
-*.ldf
+# Database exports
+*.sql.gz
+*.dump

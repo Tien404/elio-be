@@ -1,11 +1,3 @@
-"""Entity classes from the MVP class diagram (docs: ELIO_Class_Diagram_MVP.drawio).
-
-Diagram names are camelCase (hasRole, makeCode); Python uses snake_case (has_role,
-make_code). Enum values are the database values. Entities hold rules about a single
-object; services load them through repositories, call these methods and save the result.
-Mapping between database rows and entities lives in the repositories.
-"""
-
 import re
 from dataclasses import dataclass, field
 from datetime import datetime

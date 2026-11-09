@@ -21,8 +21,8 @@ class AuditRepository:
         details: dict[str, Any] | None = None,
     ) -> None:
         self.sql.execute(
-            """INSERT dbo.audit_entries (actor_id, action_type, target_type, target_id, reason, details)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO audit_entries (actor_id, action_type, target_type, target_id, reason, details)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             actor_id,
             action,
             target_type,

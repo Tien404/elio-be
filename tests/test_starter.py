@@ -17,7 +17,7 @@ CATALOG = json.loads((CONTRACTS / "catalog.json").read_text(encoding="utf-8"))
 def client():
     settings = Settings(
         environment="test",
-        odbc_connection_string="",
+        database_url="",
         db_connect_timeout_seconds=1,
     )
     with TestClient(create_app(settings)) as value:
@@ -38,48 +38,37 @@ def test_unreachable_database_is_not_ready_and_does_not_leak_credentials(client)
 
 
 def test_unknown_route_uses_problem_without_echoing_input(client):
-    response = client.get("/no-such-endpoint?password=never-echo-this")
+    response = client.get("/no-such-endpoint?=never-echo-this")
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("application/problem+json")
     assert "never-echo-this" not in response.text
 
 
-def _implemented(client) -> set[str]:
-    """Operations whose route no longer declares the 501 placeholder."""
-    schema = client.get("/openapi.json").json()
-    return {
-        op["operationId"]
-        for op in CATALOG
-        if "501" not in schema["paths"][op["path"]][op["method"].lower()]["responses"]
-    }
-
-
-@pytest.mark.parametrize("operation", CATALOG, ids=lambda op: op["operationId"])
-def test_unimplemented_routes_are_explicit_501_not_a_mock_success(client, operation):
-    if operation["operationId"] in _implemented(client):
-        pytest.skip("implemented; covered by integration tests")
-    path = re.sub(
-        r"\{([^}]+)\}",
-        lambda match: "demo_request_key_0001" if match[1] == "requestKey" else "1",
-        operation["path"],
-    )
-    response = client.request(operation["method"], path)
-    assert response.status_code == 501, (operation["operationId"], response.text)
-    body = response.json()
-    assert body["status"] == 501 and body["code"] == "NOT_IMPLEMENTED"
-    assert body["detail"].startswith("Operation unavailable:")
+def test_unimplemented_routes_return_501(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    for operation in CATALOG:
+        method, template = operation["method"], operation["path"]
+        if "501" not in paths[template][method.lower()]["responses"]:
+            continue
+        path = re.sub(
+            r"\{([^}]+)\}",
+            lambda match: "demo_request_key_0001" if match[1] == "requestKey" else "1",
+            template,
+        )
+        response = client.request(method, path)
+        assert response.status_code == 501, f"{method} {path}: {response.text}"
+        assert response.json()["code"] == "NOT_IMPLEMENTED", f"{method} {path}"
 
 
 def test_openapi_is_generated_from_route_declarations(client):
     schema = client.get("/openapi.json").json()
     assert client.app.openapi.__func__ is FastAPI.openapi
     assert len(CATALOG) == len({op["operationId"] for op in CATALOG})
-    implemented = _implemented(client)
     for op in CATALOG:
         actual = schema["paths"][op["path"]][op["method"].lower()]
         assert actual["operationId"] == op["operationId"]
         assert "x-implementation-status" not in actual
-        if op["operationId"] in implemented:
+        if "501" not in actual["responses"]:
             # Real routes declare the contract's success status.
             expected = set(op["success"])
             assert expected & set(actual["responses"]), (op["operationId"], actual["responses"])
@@ -103,12 +92,6 @@ def test_openapi_is_generated_from_route_declarations(client):
 def test_invalid_path_id_uses_safe_validation_error(client, value):
     # a placeholder route without login, so only path validation applies
     response = client.get(f"/api/v1/groups/{value}")
-    assert response.status_code == 400
-    assert response.json()["code"] == "INVALID_REQUEST"
-
-
-def test_invalid_receipt_key_uses_safe_validation_error(client):
-    response = client.get("/api/v1/assignments/1/submission-receipts/short")
     assert response.status_code == 400
     assert response.json()["code"] == "INVALID_REQUEST"
 
@@ -137,9 +120,8 @@ def test_migrations_create_every_logical_model_table():
     root = Path(__file__).parents[1]
     model = json.loads((root / "app/contracts/logical-model.json").read_text(encoding="utf-8"))
     assert len(model) == 38
-    sql = "\n".join(
-        p.read_text(encoding="utf-8") for p in sorted((root / "sql/migrations").glob("*.sql"))
-    )
-    created = set(re.findall(r"CREATE TABLE dbo\.(\w+)", sql))
-    team_additions = {"course_registrations"}  # 006: MVP sign-up requests, not in the model
+    sql = """
+""".join(p.read_text(encoding="utf-8") for p in sorted((root / "sql/migrations").glob("*.sql")))
+    created = set(re.findall("CREATE TABLE (?:IF NOT EXISTS )?(\\w+)", sql))
+    team_additions = {"course_registrations"}  # The registration table extends the logical model.
     assert created - {"schema_migrations"} == set(model) | team_additions

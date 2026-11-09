@@ -1,5 +1,3 @@
-"""Accounts, sessions, passwords and operational administration (FR-01, FR-02, FR-16/17)."""
-
 from dataclasses import dataclass
 from typing import Any
 
@@ -227,7 +225,7 @@ class AuthService:
             raise
 
     def sign_up_student(self, *, email: str, display_name: str, password: str) -> dict[str, Any]:
-        """Public self sign-up (team MVP addition). Students only; usable at once.
+        """Register a student account that can sign in immediately.
 
         created_by stays NULL: the account was not provisioned by an administrator.
         Instructors and admins are still created by an administrator.
@@ -420,7 +418,6 @@ class AuthService:
             "totalPages": (total + page_size - 1) // page_size,
         }
 
-    # Sprint 2 (not part of MVP)
     def admin_list_audit_entries(self, **kwargs: object):
         raise FeatureNotImplemented("AuthService.admin_list_audit_entries")
 

@@ -1,5 +1,3 @@
-"""MVP step 3: CourseService.searchCourses and requestEnrollment."""
-
 from fastapi.testclient import TestClient
 
 from tests.helpers import bootstrap_admin, create_user

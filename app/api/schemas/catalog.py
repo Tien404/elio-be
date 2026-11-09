@@ -1,5 +1,3 @@
-"""Catalog courses (team MVP flow). CatalogCourse matches the OpenAPI contract shape."""
-
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -53,7 +51,7 @@ class StudentList(ResponseModel):
 
 
 class Registration(ResponseModel):
-    """A student's request to take a catalog course (team MVP flow)."""
+    """A student's request to take a catalog course."""
 
     id: Id
     course: CatalogCourse

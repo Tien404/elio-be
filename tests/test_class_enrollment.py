@@ -1,5 +1,3 @@
-"""MVP enrollment end to end: request -> admin review -> professor adds -> my classes/roster."""
-
 from tests.helpers import bootstrap_admin, create_user
 
 

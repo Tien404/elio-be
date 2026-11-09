@@ -1,5 +1,3 @@
-"""Team MVP flow step 1: admin creates catalog courses with generated codes (CS1001...)."""
-
 from tests.helpers import bootstrap_admin, create_user
 
 URL = "/api/v1/admin/courses"

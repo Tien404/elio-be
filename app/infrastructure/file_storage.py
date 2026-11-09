@@ -1,4 +1,4 @@
-"""FileStorage from the class diagram: private bytes on local disk.
+"""Store private files on local disk.
 
 Files are stored under <private_files_dir>/files/<key[:2]>/<key> with a random key, never
 the uploaded name, so a user cannot choose or guess paths. Only FileAsset rows in the
