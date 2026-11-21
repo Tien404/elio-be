@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query
 
-from app.api.dependencies import ActorDep, CourseServiceDep, MutationActorDep
+from app.api.dependencies import ActorDep, CourseServiceDep, DatabaseDep, MutationActorDep
 from app.api.schemas.offerings import (
     AddCoInstructorRequest,
     Membership,
@@ -32,7 +32,7 @@ def remove_instructor_membership(
     service: CourseServiceDep,
 ):
     return service.remove_instructor_membership(
-        actor=actor, offering_id=offering_id, membership_id=membership_id
+        actor=actor, offering_id=offering_id, membership_id=membership_id, reason=body.reason
     )
 
 
@@ -70,7 +70,13 @@ def add_co_instructor(
     actor: MutationActorDep,
     service: CourseServiceDep,
 ):
-    return service.add_co_instructor(actor=actor, offering_id=offering_id, email=body.email)
+    return service.add_co_instructor(
+        actor=actor,
+        offering_id=offering_id,
+        email=body.email,
+        account_id=body.accountId,
+        reason=body.reason,
+    )
 
 
 @router.post(
@@ -87,5 +93,65 @@ def transfer_lead(
     service: CourseServiceDep,
 ):
     return service.transfer_leadership(
-        actor=actor, offering_id=offering_id, membership_id=body.membershipId
+        actor=actor, offering_id=offering_id, membership_id=body.membershipId, reason=body.reason
     )
+
+
+@router.get(
+    "/offerings/{offeringId}/teaching-team/candidates", operation_id="listInstructorCandidates"
+)
+def instructor_candidates(
+    offering_id: OfferingId,
+    actor: ActorDep,
+    service: CourseServiceDep,
+    q: str | None = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    pageSize: Annotated[int, Query(ge=1, le=100)] = 25,
+):
+    return service.list_instructor_candidates(
+        actor=actor, offering_id=offering_id, q=q, page=page, page_size=pageSize
+    )
+
+
+@router.get("/offerings/{offeringId}/audit-entries", operation_id="listOfferingAuditEntries")
+def offering_audit(
+    offering_id: OfferingId,
+    actor: ActorDep,
+    database: DatabaseDep,
+    page: Annotated[int, Query(ge=1)] = 1,
+    pageSize: Annotated[int, Query(ge=1, le=100)] = 25,
+):
+    from app.infrastructure.db.repositories.course_repository import CourseRepository
+    from app.infrastructure.db.repositories.report_repository import ReportRepository
+    from app.infrastructure.db.sql import Sql
+    from app.services.course_service import CourseService
+
+    with database.transaction() as connection:
+        sql = Sql(connection)
+        CourseService._require_lead(CourseRepository(sql), actor, offering_id, allow_admin=True)
+        rows, total = ReportRepository(sql).audit_entries(
+            actor_id=None,
+            action=None,
+            target_type=None,
+            offering_id=offering_id,
+            offset=(page - 1) * pageSize,
+            limit=pageSize,
+        )
+        return {
+            "items": [
+                {
+                    "id": r["audit_id"],
+                    "actorId": r["actor_id"],
+                    "action": r["action_type"],
+                    "targetType": r["target_type"],
+                    "targetId": r["target_id"],
+                    "createdAt": r["created_at"],
+                    "reason": r["reason"],
+                }
+                for r in rows
+            ],
+            "page": page,
+            "pageSize": pageSize,
+            "totalItems": total,
+            "totalPages": (total + pageSize - 1) // pageSize,
+        }

@@ -466,14 +466,22 @@ class AuthService:
         actor_id: int | None,
         action: str | None,
         target_type: str | None,
+        offering_id: int | None = None,
+        from_at=None,
+        to_at=None,
     ) -> dict[str, Any]:
         """Admin: the audit log, newest first."""
         _require_admin(actor)
+        if from_at and to_at and from_at > to_at:
+            raise ApiError(400, "INVALID_DATE_RANGE", "fromAt must precede toAt.")
         with self.database.read_connection() as connection:
             rows, total = ReportRepository(Sql(connection)).audit_entries(
                 actor_id=actor_id,
                 action=action,
                 target_type=target_type,
+                offering_id=offering_id,
+                from_at=from_at,
+                to_at=to_at,
                 offset=(page - 1) * page_size,
                 limit=page_size,
             )

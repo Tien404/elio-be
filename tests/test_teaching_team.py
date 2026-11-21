@@ -9,13 +9,16 @@ def _team(c):
 
 
 def _add(user, c, email):
-    return user.post(f"/api/v1/offerings/{c.offering_id}/teaching-team", json={"email": email})
+    return user.post(
+        f"/api/v1/offerings/{c.offering_id}/teaching-team",
+        json={"email": email, "reason": "Teaching assignment"},
+    )
 
 
 def _remove(user, c, membership_id):
     return user.patch(
         f"/api/v1/offerings/{c.offering_id}/memberships/{membership_id}",
-        json={"status": "REMOVED"},
+        json={"status": "REMOVED", "reason": "Teaching reassignment"},
     )
 
 
@@ -46,10 +49,14 @@ def test_hand_the_class_over(api):
     url = f"/api/v1/offerings/{c.offering_id}/lead-transfer"
 
     lead_row = _team(c)["Prof"]["id"]
-    not_co = c.prof.post(url, json={"membershipId": lead_row})  # already the lead
+    not_co = c.prof.post(
+        url, json={"reason": "Teaching reassignment", "membershipId": lead_row}
+    )  # already the lead
     assert not_co.status_code == 422 and not_co.json()["code"] == "NOT_A_CO_INSTRUCTOR"
 
-    moved = c.prof.post(url, json={"membershipId": membership["id"]})
+    moved = c.prof.post(
+        url, json={"reason": "Teaching reassignment", "membershipId": membership["id"]}
+    )
     assert moved.status_code == 200, moved.text
     assert moved.json()["teachingRole"] == "LEAD"
     team = _team(c)
@@ -83,6 +90,6 @@ def test_remove_and_leave(api):
     assert back.json()["status"] == "ACTIVE"
     wrong_class = c.prof.patch(
         f"/api/v1/offerings/{c.offering_id + 999}/memberships/{membership['id']}",
-        json={"status": "REMOVED"},
+        json={"status": "REMOVED", "reason": "Teaching reassignment"},
     )
     assert wrong_class.status_code == 404

@@ -1,6 +1,7 @@
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Path, Query, Response
+from pydantic import AwareDatetime
 
 from app.api.dependencies import (
     ActorDep,
@@ -192,6 +193,9 @@ def admin_list_audit_entries(
     actorId: Annotated[int | None, Query(ge=1, le=2147483647)] = None,
     action: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
     targetType: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    offeringId: Annotated[int | None, Query(ge=1)] = None,
+    fromAt: AwareDatetime | None = None,
+    toAt: AwareDatetime | None = None,
 ):
     return service.admin_list_audit_entries(
         actor=actor,
@@ -200,6 +204,9 @@ def admin_list_audit_entries(
         actor_id=actorId,
         action=action,
         target_type=targetType,
+        offering_id=offeringId,
+        from_at=fromAt,
+        to_at=toAt,
     )
 
 

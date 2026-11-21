@@ -55,7 +55,11 @@ def create_session(
     summary="Public student sign-up; log in afterwards with POST /auth/sessions.",
     responses={409: {"description": "EMAIL_TAKEN"}},
 )
-def sign_up_student(body: SignUpRequest, service: AuthServiceDep):
+def sign_up_student(body: SignUpRequest, service: AuthServiceDep, settings: SettingsDep):
+    if not settings.self_registration_enabled:
+        from app.core.errors import forbidden
+
+        raise forbidden("Self-registration is disabled. Contact your administrator.")
     return service.sign_up_student(
         email=body.email, display_name=body.displayName, password=body.password
     )
@@ -122,3 +126,8 @@ def get_current_session(
 ):
     response.headers["Cache-Control"] = "no-store"
     return service.restore_identity(session=session)
+
+
+@router.get("/auth/options", operation_id="getAuthenticationOptions")
+def authentication_options(settings: SettingsDep):
+    return {"selfRegistrationEnabled": settings.self_registration_enabled}

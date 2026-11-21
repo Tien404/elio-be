@@ -81,6 +81,9 @@ class ReportRepository:
         target_type: str | None,
         offset: int,
         limit: int,
+        offering_id: int | None = None,
+        from_at=None,
+        to_at=None,
     ) -> tuple[list[dict[str, Any]], int]:
         where, params = ["1 = 1"], []
         for column, value in (
@@ -91,6 +94,17 @@ class ReportRepository:
             if value is not None:
                 where.append(f"{column} = %s")
                 params.append(value)
+        if offering_id is not None:
+            where.append(
+                "((e.target_type='OFFERING' AND e.target_id=%s) OR (e.target_type='MEMBERSHIP' AND e.target_id IN (SELECT membership_id FROM course_memberships WHERE offering_id=%s)))"
+            )
+            params.extend([offering_id, offering_id])
+        for value, operator in ((from_at, ">="), (to_at, "<=")):
+            if value is not None:
+                from datetime import UTC
+
+                where.append(f"e.created_at {operator} %s")
+                params.append(value.astimezone(UTC).replace(tzinfo=None))
         condition = " AND ".join(where)
         total = self.sql.scalar(
             f"SELECT COUNT(*) FROM audit_entries AS e WHERE {condition}", *params
@@ -98,7 +112,7 @@ class ReportRepository:
         rows = self.sql.all(
             f"""SELECT e.audit_id, e.actor_id, u.full_name AS actor_name, e.action_type,
                        e.target_type, e.target_id, e.reason, e.details, e.created_at
-                FROM audit_entries AS e JOIN users AS u ON u.user_id = e.actor_id
+                FROM audit_entries AS e LEFT JOIN users AS u ON u.user_id = e.actor_id
                 WHERE {condition}
                 ORDER BY e.created_at DESC, e.audit_id DESC LIMIT %s, %s""",
             *params,

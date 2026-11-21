@@ -9,7 +9,7 @@ def require_member(repo: CourseRepository, actor: Actor, offering_id: int):
     if offering is None:
         raise not_found("Class")
     membership = repo.find_membership(offering_id, actor.user_id)
-    if membership is None or not membership.is_active():
+    if actor.role == "ADMIN" or membership is None or not membership.is_active():
         raise not_found("Class")
     if offering.state == CourseState.DRAFT and not is_teacher(membership):
         raise not_found("Class")
@@ -26,6 +26,7 @@ def require_writable(repo: CourseRepository, offering_id: int, *, open_only=Fals
 
 
 def require_teacher(repo: CourseRepository, actor: Actor, offering_id: int):
+    require_writable(repo, offering_id)
     membership = require_member(repo, actor, offering_id)
     if not is_teacher(membership):
         raise forbidden()
@@ -34,6 +35,7 @@ def require_teacher(repo: CourseRepository, actor: Actor, offering_id: int):
 
 
 def require_student(repo: CourseRepository, actor: Actor, offering_id: int):
+    require_writable(repo, offering_id)
     membership = require_member(repo, actor, offering_id)
     if membership.course_role != CourseRole.STUDENT:
         raise forbidden()

@@ -179,3 +179,10 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 ActorDep = Annotated[Actor, Depends(current_actor)]
 MutationActorDep = Annotated[Actor, Depends(mutation_actor)]
 VersionDep = Annotated[int, Depends(expected_version)]
+
+
+def get_database(request: Request):
+    return request.app.state.database
+
+
+DatabaseDep = Annotated[object, Depends(get_database)]

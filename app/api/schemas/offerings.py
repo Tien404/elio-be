@@ -84,12 +84,22 @@ class OfferingPage(PageMeta):
 
 
 class AddCoInstructorRequest(RequestModel):
-    email: Email
+    email: Email | None = None
+    accountId: Id | None = None
+    reason: str | None = None
+
+    @model_validator(mode="after")
+    def select_instructor(self):
+        if (self.email is None) == (self.accountId is None):
+            raise ValueError("Choose exactly one instructor identifier")
+        return self
 
 
 class RemoveMembershipRequest(RequestModel):
     status: Literal["REMOVED"]
+    reason: Annotated[str, Field(min_length=1, max_length=1000)]
 
 
 class TransferLeadRequest(RequestModel):
     membershipId: Id = Field(description="An active co-instructor of the class")
+    reason: Annotated[str, Field(min_length=1, max_length=1000)]

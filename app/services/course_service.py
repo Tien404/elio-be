@@ -43,6 +43,7 @@ from app.infrastructure.db.repositories.report_repository import ReportRepositor
 from app.infrastructure.db.sql import Sql, is_unique_violation
 from app.services.access import is_teacher, require_member
 from app.services.auth_service import normalize_email
+from app.services.notification_service import notify_course
 
 
 def course_view(course: Course) -> dict[str, Any]:
@@ -540,14 +541,21 @@ class CourseService:
         return offering
 
     # ------------------------------------------------------------ teaching team
-    def add_co_instructor(self, *, actor: Actor, offering_id: int, email: str):
+    def add_co_instructor(
+        self, *, actor: Actor, offering_id: int, email=None, account_id=None, reason=None
+    ):
         """The lead (or an admin) adds an active instructor to the teaching team."""
         with self.database.transaction() as connection:
             sql = Sql(connection)
             repo = CourseRepository(sql)
-            self._require_lead(repo, actor, offering_id, allow_admin=True)
-            self._writable_class(repo, offering_id)
-            row = IdentityRepository(sql).find_by_email(normalize_email(email))
+            self._team_writable(sql, actor, offering_id)
+            if actor.role == SystemRole.ADMIN:
+                self._require_reason(reason)
+            row = (
+                IdentityRepository(sql).get_account(account_id, lock=True)
+                if account_id
+                else IdentityRepository(sql).find_by_email(normalize_email(email))
+            )
             user = user_from_row(row) if row else None
             if user is None or not user.has_role(SystemRole.INSTRUCTOR) or not user.is_active():
                 raise ApiError(422, "INSTRUCTOR_NOT_FOUND", "No active instructor has this email.")
@@ -568,24 +576,41 @@ class CourseService:
             AuditRepository(sql).record(
                 actor_id=actor.user_id,
                 action="CO_INSTRUCTOR_ADDED",
+                reason=reason,
                 target_type="MEMBERSHIP",
                 target_id=membership_id,
             )
+            notify_course(
+                sql,
+                offering_id=offering_id,
+                actor_id=actor.user_id,
+                event_type="INSTRUCTOR_ADDED",
+                title="",
+                target_type="OFFERING",
+                target_id=offering_id,
+                event_key=f"INSTRUCTOR_ADDED:{offering_id}:{membership_id}:{repo.get_membership(membership_id).version}",
+                students_only=False,
+            )
             return self._membership_view(repo, membership_id)
 
-    def remove_instructor_membership(self, *, actor: Actor, offering_id: int, membership_id: int):
+    def remove_instructor_membership(
+        self, *, actor: Actor, offering_id: int, membership_id: int, reason=None
+    ):
         """The lead or an admin removes a co-instructor; a co-instructor may also leave.
         The lead cannot be removed (hand the class over first)."""
         with self.database.transaction() as connection:
             sql = Sql(connection)
             repo = CourseRepository(sql)
+            repo.get_offering(offering_id, lock=True)
+            self._require_reason(reason)
             target = repo.get_membership(membership_id, lock=True)
             if target is None or target.offering_id != offering_id:
                 raise not_found("Membership")
             leaving = target.user_id == actor.user_id and target.is_active()
             if not leaving:
-                self._require_lead(repo, actor, offering_id, allow_admin=True)
-            self._writable_class(repo, offering_id)
+                self._team_writable(sql, actor, offering_id)
+            else:
+                self._writable_class(repo, offering_id)
             if target.course_role == CourseRole.PRIMARY_INSTRUCTOR:
                 raise conflict(
                     "LEAD_CANNOT_BE_REMOVED", "Hand the class over to another professor first."
@@ -597,19 +622,21 @@ class CourseService:
             AuditRepository(sql).record(
                 actor_id=actor.user_id,
                 action="CO_INSTRUCTOR_REMOVED",
+                reason=reason,
                 target_type="MEMBERSHIP",
                 target_id=membership_id,
             )
             return self._membership_view(repo, membership_id)
 
-    def transfer_leadership(self, *, actor: Actor, offering_id: int, membership_id: int):
+    def transfer_leadership(
+        self, *, actor: Actor, offering_id: int, membership_id: int, reason=None
+    ):
         """The lead (or an admin) hands the class to a co-instructor; the old lead stays
         on the team as a co-instructor."""
         with self.database.transaction() as connection:
             sql = Sql(connection)
             repo = CourseRepository(sql)
-            self._require_lead(repo, actor, offering_id, allow_admin=True)
-            self._writable_class(repo, offering_id)
+            self._team_writable(sql, actor, offering_id)
             target = repo.get_membership(membership_id, lock=True)
             if (
                 target is None
@@ -620,6 +647,10 @@ class CourseService:
                 raise ApiError(
                     422, "NOT_A_CO_INSTRUCTOR", "Add this professor to the teaching team first."
                 )
+            self._require_reason(reason)
+            account = IdentityRepository(sql).get_account(target.user_id, lock=True)
+            if not account or account["status"] != "ACTIVE":
+                raise ApiError(422, "INELIGIBLE_SUCCESSOR", "Select an active co-instructor.")
             old_lead = repo.lead_membership(offering_id, lock=True)
             if old_lead is not None:  # demote first: a class has one lead at a time
                 old_lead.course_role = CourseRole.CO_INSTRUCTOR
@@ -629,11 +660,68 @@ class CourseService:
             AuditRepository(sql).record(
                 actor_id=actor.user_id,
                 action="LEAD_TRANSFERRED",
+                reason=reason,
                 target_type="MEMBERSHIP",
                 target_id=membership_id,
-                details={"previousLeadMembershipId": old_lead.membership_id if old_lead else None},
+                details={
+                    "previousLeadMembershipId": old_lead.membership_id if old_lead else None,
+                    "offeringId": offering_id,
+                },
+            )
+            notify_course(
+                sql,
+                offering_id=offering_id,
+                actor_id=actor.user_id,
+                event_type="LEAD_TRANSFERRED",
+                title="",
+                target_type="OFFERING",
+                target_id=offering_id,
+                event_key=f"LEAD_TRANSFERRED:{offering_id}:{membership_id}:{repo.get_membership(membership_id).version}",
+                students_only=False,
             )
             return self._membership_view(repo, membership_id)
+
+    @staticmethod
+    def _require_reason(reason):
+        if not reason or not reason.strip():
+            raise ApiError(400, "REASON_REQUIRED", "Provide an operational reason.")
+
+    def _team_writable(self, sql, actor, offering_id):
+        repo = CourseRepository(sql)
+        offering = repo.get_offering(offering_id, lock=True)
+        self._require_lead(repo, actor, offering_id, allow_admin=True)
+        if offering.state == CourseState.ARCHIVED:
+            lead = repo.lead_membership(offering_id, lock=True)
+            account = IdentityRepository(sql).get_account(lead.user_id, lock=True) if lead else None
+            if actor.role != SystemRole.ADMIN or (account and account["status"] == "ACTIVE"):
+                raise conflict("CLASS_READ_ONLY", "Only administrator lead repair is available.")
+
+    def list_instructor_candidates(self, *, actor, offering_id, q=None, page=1, page_size=25):
+        with self.database.transaction() as connection:
+            sql = Sql(connection)
+            self._team_writable(sql, actor, offering_id)
+            from app.infrastructure.db.sql import like_literal
+
+            pattern = "%" + like_literal(q or "") + "%"
+            rows = sql.all(
+                """SELECT u.user_id,u.full_name,u.status,u.role,u.must_change_pwd
+                FROM users u WHERE u.role='INSTRUCTOR' AND u.status='ACTIVE'
+                AND (u.email LIKE %s ESCAPE '!' OR u.full_name LIKE %s ESCAPE '!')
+                AND NOT EXISTS (SELECT 1 FROM course_memberships m WHERE m.offering_id=%s
+                    AND m.user_id=u.user_id AND m.status='ACTIVE') ORDER BY u.full_name,u.user_id""",
+                pattern,
+                pattern,
+                offering_id,
+            )
+            items = [
+                _account_summary(
+                    r["user_id"], r["full_name"], r["status"], r["role"], r["must_change_pwd"]
+                )
+                for r in rows
+            ]
+            return _page(
+                items[(page - 1) * page_size : page * page_size], page, page_size, len(items)
+            )
 
     @staticmethod
     def _writable_class(repo: CourseRepository, offering_id: int) -> None:
@@ -770,9 +858,9 @@ class CourseService:
                     "teach": teacher and writable,
                     "edit": lead and writable,
                     "publish": lead and view["status"] == "DRAFT",
-                    "archive": lead and view["status"] == "OPEN",
+                    "archive": (lead or admin) and view["status"] == "OPEN",
                     "restore": (lead or admin) and not writable,
-                    "manageTeam": False,
+                    "manageTeam": (lead or admin) and writable,
                     "repairLead": False,
                     "enroll": lead and view["status"] == "OPEN",
                     "manageCode": lead and writable,
@@ -796,7 +884,14 @@ class CourseService:
                 "totalMaterials": 0,
             }
         )
-        if membership and membership.is_active():
+        if actor.role == SystemRole.ADMIN:
+            view["permissions"].update(academic=False, teach=False, edit=False, publish=False)
+            view["learningInformation"] = None
+            view["joinCode"] = None
+            view["permissions"]["repairLead"] = view["status"] == "ARCHIVED" and (
+                view["lead"] is None or view["lead"]["status"] != "ACTIVE"
+            )
+        if membership and membership.is_active() and actor.role != SystemRole.ADMIN:
             view["totalMaterials"] = sql.scalar(
                 "SELECT COUNT(*) FROM materials AS m JOIN topics AS t ON t.topic_id=m.topic_id WHERE t.offering_id=%s AND m.status='PUBLISHED'",
                 view["id"],
@@ -824,8 +919,7 @@ class CourseService:
                 old = self._workspace_view(sql, actor, repo.offering_summary(offering_id))
                 target = changes.get("status", old["status"])
                 if actor.role == SystemRole.ADMIN and (
-                    target != "OPEN"
-                    or old["status"] != "ARCHIVED"
+                    (old["status"], target) not in {("OPEN", "ARCHIVED"), ("ARCHIVED", "OPEN")}
                     or not changes.get("reason", "").strip()
                     or set(changes) - {"status", "reason"}
                 ):
@@ -843,10 +937,17 @@ class CourseService:
                 }
                 if target not in allowed[old["status"]]:
                     raise conflict("INVALID_TRANSITION", "Invalid class state transition.")
+                if old["lead"] is not None:
+                    lead_account = IdentityRepository(sql).get_account(old["lead"]["id"], lock=True)
+                    old["lead"]["status"] = lead_account["status"]
                 if target in ("DRAFT", "OPEN") and (
                     old["lead"] is None or old["lead"]["status"] != "ACTIVE"
                 ):
                     raise conflict("ACTIVE_LEAD_REQUIRED", "An active lead instructor is required.")
+                if target == "ARCHIVED":
+                    from app.services.quiz_service import finish_expired
+
+                    finish_expired(sql, offering_id=offering_id)
                 if target == "ARCHIVED" and repo.has_unfinished_attempts(offering_id):
                     raise conflict("ATTEMPTS_PENDING", "Finalize quiz attempts before archiving.")
                 data = {

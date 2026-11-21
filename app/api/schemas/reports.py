@@ -101,7 +101,14 @@ class Calendar(ResponseModel):
 class Notification(ResponseModel):
     id: Id
     eventType: Literal[
-        "ANNOUNCEMENT", "ASSIGNMENT_PUBLISHED", "DUE_DATE_CHANGED", "GRADES_RELEASED"
+        "ANNOUNCEMENT",
+        "ASSIGNMENT_PUBLISHED",
+        "DUE_DATE_CHANGED",
+        "GRADES_RELEASED",
+        "QUIZ_PUBLISHED",
+        "QUIZ_RESULT_RELEASED",
+        "INSTRUCTOR_ADDED",
+        "LEAD_TRANSFERRED",
     ]
     message: str
     offeringId: Id | None

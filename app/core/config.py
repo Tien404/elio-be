@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     db_query_timeout_seconds: int = Field(default=5, ge=1, le=60)
     private_files_dir: Path = Path("./data/private")
 
+    self_registration_enabled: bool = False
+
     # Sessions: opaque cookie, absolute lifetime, no sliding renewal.
     session_cookie_name: str = "elio_session"
     session_ttl_hours: int = Field(default=12, ge=1, le=24 * 14)

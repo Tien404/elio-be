@@ -235,6 +235,7 @@ def test_cli_account_creation_logs_in_without_temporary_password(api):
 
 
 def test_student_can_sign_up_and_log_in_at_once(api):
+    api.app.state.settings.self_registration_enabled = True
     client = TestClient(api.app)
     body = {"email": "New.Student@elio.test", "displayName": "New Student", "password": "x" * 12}
     created = client.post("/api/v1/auth/sign-up", json=body)
@@ -253,6 +254,7 @@ def test_student_can_sign_up_and_log_in_at_once(api):
 
 
 def test_sign_up_is_students_only_and_validated(api):
+    api.app.state.settings.self_registration_enabled = True
     client = TestClient(api.app)
     good = {"email": "s@elio.test", "displayName": "S", "password": "x" * 12}
     for bad in (
