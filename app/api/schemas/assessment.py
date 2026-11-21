@@ -15,6 +15,7 @@ class AssignmentRequest(RequestModel):
     instructions: str | None = None
     mode: Literal["INDIVIDUAL", "GROUP"] = "INDIVIDUAL"
     maxGroupSize: Annotated[int, Field(ge=1, le=20, description="Group work only")] | None = None
+    groupFormation: Literal["SELF", "INSTRUCTOR"] = "SELF"
     status: Literal["DRAFT", "PUBLISHED"]
     openAt: AwareDatetime
     dueAt: AwareDatetime
@@ -39,6 +40,7 @@ class UpdateAssignmentRequest(RequestModel):
     instructions: str | None = None
     mode: Literal["INDIVIDUAL", "GROUP"] | None = None
     maxGroupSize: Annotated[int, Field(ge=1, le=20)] | None = None
+    groupFormation: Literal["SELF", "INSTRUCTOR"] | None = None
     status: Literal["DRAFT", "PUBLISHED", "ARCHIVED"] | None = None
     openAt: AwareDatetime | None = None
     dueAt: AwareDatetime | None = None
@@ -64,6 +66,7 @@ class Assignment(ResponseModel):
     instructions: str | None
     mode: Literal["INDIVIDUAL", "GROUP"]
     maxGroupSize: int | None
+    groupFormation: Literal["SELF", "INSTRUCTOR"]
     status: Literal["DRAFT", "PUBLISHED", "ARCHIVED"]
     openAt: Instant
     dueAt: Instant
@@ -82,19 +85,8 @@ class AssignmentPage(PageMeta):
 
 class SubmissionRequest(RequestModel):
     expectedVersion: Annotated[int, Field(ge=0)]
+    groupId: Id | None = None
     fileIds: Annotated[list[Id], Field(min_length=1, max_length=5)]
-    requestKey: (
-        Annotated[
-            str,
-            Field(
-                min_length=16,
-                max_length=128,
-                pattern=r"^[A-Za-z0-9._:-]+$",
-                description="Optional client key; sending it again returns the same hand-in",
-            ),
-        ]
-        | None
-    ) = None
 
 
 class SubmissionVersion(ResponseModel):

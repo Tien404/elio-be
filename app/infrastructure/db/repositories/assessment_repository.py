@@ -3,12 +3,13 @@
 from datetime import UTC, datetime
 from typing import Any
 
+from app.core.errors import ApiError
 from app.domain.entities import Assignment, PublishStatus
-from app.infrastructure.db.sql import Sql
+from app.infrastructure.db.sql import Sql, violated_constraint
 
 _ASSIGNMENT_SELECT = """SELECT a.activity_id, a.offering_id, a.topic_id, a.title, a.max_score,
         a.status, a.version, a.weight_pct, a.is_mandatory, x.instructions, x.open_at, x.due_at, x.cutoff_at,
-        x.is_group_work, x.max_group_size
+        x.is_group_work, x.max_group_size, x.group_formation
     FROM activities AS a
     JOIN assignments AS x ON x.activity_id = a.activity_id"""
 
@@ -194,19 +195,28 @@ class AssessmentRepository:
         request_hash: str,
         file_ids: list[int],
     ) -> None:
-        self.sql.execute(
-            """INSERT INTO submission_versions (submission_id, version_no, submitted_by,
-                   submitted_at, is_late, receipt_code, request_key, request_hash)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-            submission_id,
-            version_no,
-            submitted_by,
-            _utc(submitted_at),
-            is_late,
-            receipt_code,
-            request_key,
-            request_hash,
-        )
+        try:
+            self.sql.execute(
+                """INSERT INTO submission_versions (submission_id, version_no, submitted_by,
+                       submitted_at, is_late, receipt_code, request_key, request_hash)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                submission_id,
+                version_no,
+                submitted_by,
+                _utc(submitted_at),
+                is_late,
+                receipt_code,
+                request_key,
+                request_hash,
+            )
+        except Exception as error:
+            if violated_constraint(error) == "UQ_submission_versions_request":
+                raise ApiError(
+                    409,
+                    "IDEMPOTENCY_KEY_REUSED",
+                    "This confirmation key was accepted by another request.",
+                ) from None
+            raise
         for file_no, file_id in enumerate(file_ids, start=1):
             self.sql.execute(
                 """INSERT INTO submission_files (submission_id, version_no, file_no, file_id)

@@ -44,5 +44,5 @@ class SubmissionHistory(ResponseModel):
     history: list[SubmissionVersion]
     files: list[FileAsset]
     recipients: list[AccountSummary]
-    grade: None = None
+    grade: dict | None = None
     revisions: list[dict] = []

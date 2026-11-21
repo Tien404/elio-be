@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Response
+from fastapi import APIRouter, Header, Path, Query, Response
 
 from app.api.dependencies import ActorDep, MutationActorDep, SubmissionServiceDep
 from app.api.schemas.assessment import (
@@ -51,13 +51,17 @@ def confirm_submission(
     actor: MutationActorDep,
     response: Response,
     service: SubmissionServiceDep,
+    request_key: Annotated[
+        str, Header(alias="Idempotency-Key", pattern=r"^[A-Za-z0-9._:-]{16,128}$")
+    ],
 ):
     view = service.confirm_submission(
         actor=actor,
         assignment_id=assignment_id,
         expected_version=body.expectedVersion,
         file_ids=body.fileIds,
-        request_key=body.requestKey,
+        request_key=request_key,
+        group_id=body.groupId,
     )
     response.headers["Location"] = f"/api/v1/submissions/{view['id']}"
     return view
@@ -86,7 +90,7 @@ def get_submission(
     "/assignments/{assignmentId}/submission-receipts/{requestKey}",
     operation_id="getSubmissionReceipt",
     response_model=SubmissionVersion,
-    summary="Find a hand-in by its receipt code (R-...) or the requestKey sent with it.",
+    summary="Recover the original actor-owned confirmation by its Idempotency-Key.",
 )
 def get_submission_receipt(
     assignment_id: AssignmentId,

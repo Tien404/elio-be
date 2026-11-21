@@ -6,6 +6,7 @@ from app.infrastructure.db.sql import Sql
 
 # A group is locked once it has a submission (handed in, or a grade given for missing work).
 _GROUP_SELECT = """SELECT g.group_id, g.assignment_id, g.name, g.version,
+        (SELECT MIN(roster_frozen_at) FROM submissions s WHERE s.group_id=g.group_id) AS locked_at,
         EXISTS (SELECT 1 FROM submissions AS s WHERE s.group_id = g.group_id) AS locked
     FROM assignment_groups AS g"""
 
@@ -20,7 +21,7 @@ class GroupRepository:
             assignment_id,
         )
         members = self.sql.all(
-            """SELECT m.group_id, u.user_id, u.full_name, st.student_code
+            """SELECT m.group_id, u.user_id, u.full_name, st.student_code, u.status AS account_status
                FROM group_members AS m
                JOIN users AS u ON u.user_id = m.student_id
                JOIN students AS st ON st.user_id = m.student_id
@@ -39,7 +40,7 @@ class GroupRepository:
         group = self.sql.one(f"{_GROUP_SELECT} WHERE g.group_id = %s", group_id)
         if group is not None:
             group["members"] = self.sql.all(
-                """SELECT m.group_id, u.user_id, u.full_name, st.student_code
+                """SELECT m.group_id, u.user_id, u.full_name, st.student_code, u.status AS account_status
                    FROM group_members AS m
                    JOIN users AS u ON u.user_id = m.student_id
                    JOIN students AS st ON st.user_id = m.student_id
@@ -125,7 +126,7 @@ class GroupRepository:
                    WHERE s.submission_id = %s AND s.student_id IS NOT NULL
                    UNION
                    SELECT m.student_id FROM submissions AS s
-                   JOIN group_members AS m ON m.group_id = s.group_id
+                   JOIN submission_roster AS m ON m.submission_id = s.submission_id
                    WHERE s.submission_id = %s""",
                 submission_id,
                 submission_id,

@@ -133,9 +133,16 @@ def test_missing_work_marks_the_whole_group(api):
     _enroll_outsider(c)
     box = _group_box(c, size=2)
     _create(c.prof, box, "Team", memberIds=[c.student.account_id, c.outsider.account_id])
+    from tests.test_main_adaptation import close_assignment
+
+    close_assignment(api, box["id"])
     marked = c.prof.post(
         f"/api/v1/assignments/{box['id']}/missing-work-decisions",
-        json={"studentId": c.student.account_id, "specialMark": "ABSENT"},
+        json={
+            "studentId": c.student.account_id,
+            "specialMark": "ABSENT",
+            "zeroReason": "No submission",
+        },
     )
     assert marked.status_code == 200, marked.text
     for student in (c.student, c.outsider):

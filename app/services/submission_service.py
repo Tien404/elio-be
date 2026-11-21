@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, BinaryIO
 
+from app.api.schemas.common import utc_payload
 from app.core.errors import (
     ApiError,
     not_found,
@@ -39,6 +40,7 @@ def assignment_view(row: dict[str, Any]) -> dict[str, Any]:
         "instructions": row["instructions"] or None,
         "mode": "GROUP" if row["is_group_work"] else "INDIVIDUAL",
         "maxGroupSize": row["max_group_size"],
+        "groupFormation": row["group_formation"],
         "status": row["status"],
         "openAt": row["open_at"],
         "dueAt": row["due_at"],
@@ -81,11 +83,13 @@ def check_submission_file_access(sql: Sql, actor: Actor, file: dict[str, Any]) -
     require_member(CourseRepository(sql), actor, file["offering_id"])
     if file["uploaded_by"] == actor.user_id:
         return
-    if file["assignment_id"] is not None:  # group mates may open each other's hand-in files
-        groups = GroupRepository(sql)
-        mine = groups.group_of(file["assignment_id"], actor.user_id)
-        if mine is not None and mine == groups.group_of(file["assignment_id"], file["uploaded_by"]):
-            return
+    if file["state"] == "ATTACHED" and sql.scalar(
+        """SELECT COUNT(*) FROM submission_files f
+        JOIN submission_roster r ON r.submission_id=f.submission_id WHERE f.file_id=%s AND r.student_id=%s""",
+        file["file_id"],
+        actor.user_id,
+    ):
+        return
     membership = CourseRepository(sql).find_membership(file["offering_id"], actor.user_id)
     if membership is None or not membership.is_active() or not is_teacher(membership):
         raise not_found("File")
@@ -165,6 +169,11 @@ class SubmissionService:
             self._validate_assignment(sql, actor, offering_id, data)
             repo = AssessmentRepository(sql)
             assignment_id = repo.insert_assignment(offering_id=offering_id, data=data)
+            sql.execute(
+                "UPDATE assignments SET group_formation=%s WHERE activity_id=%s",
+                data.get("groupFormation", "SELF"),
+                assignment_id,
+            )
             repo.set_attachments(assignment_id, data["fileIds"])
             for file_id in data["fileIds"]:
                 ContentRepository(sql).attach_file(file_id)
@@ -209,6 +218,13 @@ class SubmissionService:
             if row["version"] != expected_version:
                 raise version_conflict(row["version"])
             old = assignment_view(row)
+            if "groupFormation" in changes and changes["groupFormation"] != old["groupFormation"]:
+                if sql.scalar(
+                    "SELECT COUNT(*) FROM assignment_groups WHERE assignment_id=%s", assignment_id
+                ):
+                    raise ApiError(
+                        409, "GROUPS_EXIST", "Group formation cannot change after groups exist."
+                    )
             data = {
                 k: old[k]
                 for k in [
@@ -266,6 +282,11 @@ class SubmissionService:
                     )
             self._validate_assignment(sql, actor, row["offering_id"], data, assignment_id)
             repo.update_assignment(assignment_id, data)
+            sql.execute(
+                "UPDATE assignments SET group_formation=%s WHERE activity_id=%s",
+                data.get("groupFormation", old["groupFormation"]),
+                assignment_id,
+            )
             repo.set_attachments(assignment_id, data["fileIds"])
             for file_id in data["fileIds"]:
                 ContentRepository(sql).attach_file(file_id)
@@ -337,9 +358,10 @@ class SubmissionService:
         assignment_id: int,
         expected_version: int,
         file_ids: list[int],
-        request_key: str | None = None,
+        request_key: str,
+        group_id: int | None = None,
     ) -> dict[str, Any]:
-        """Create one version. A client may send its own request_key: sending the same key
+        """Create one version. A client must send its confirmation request_key: sending the same key
         again (e.g. after a lost response) returns the earlier hand-in instead of a new one."""
         if not 1 <= len(file_ids) <= MAX_SUBMISSION_FILES or len(set(file_ids)) != len(file_ids):
             raise ApiError(400, "INVALID_REQUEST", "Submit 1 to 5 different files.")
@@ -349,12 +371,56 @@ class SubmissionService:
             row = repo.get_assignment(assignment_id)
             if row is None:
                 raise not_found("Assignment")
-            if request_key and (done := repo.find_request(actor.user_id, request_key)):
-                earlier = repo.get_submission(done)
-                if earlier["assignment_id"] != assignment_id:
-                    raise ApiError(409, "REQUEST_KEY_USED", "This requestKey was used elsewhere.")
-                require_member(CourseRepository(sql), actor, row["offering_id"])
-                return self._view(sql, earlier)  # already handed in: same answer again
+            require_member(CourseRepository(sql), actor, row["offering_id"])
+            CourseRepository(sql).get_offering(row["offering_id"], lock=True)
+            row = repo.get_assignment(assignment_id, lock=True)
+            actual_group = (
+                GroupRepository(sql).group_of(assignment_id, actor.user_id)
+                if row["is_group_work"]
+                else None
+            )
+            if group_id is not None and group_id != actual_group:
+                raise ApiError(409, "GROUP_CHANGED", "Reload your current group before submitting.")
+            import json
+
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    [assignment_id, actual_group, expected_version, file_ids], separators=(",", ":")
+                ).encode()
+            ).hexdigest()
+            accepted = (
+                sql.one(
+                    "SELECT * FROM submission_versions WHERE submitted_by=%s AND request_key=%s",
+                    actor.user_id,
+                    request_key,
+                )
+                if request_key
+                else None
+            )
+            if accepted:
+                original = repo.get_submission(accepted["submission_id"])
+                receipt = self._receipt(sql, accepted)
+                original_fingerprint = hashlib.sha256(
+                    json.dumps(
+                        [
+                            original["assignment_id"],
+                            original["group_id"],
+                            accepted["version_no"] - 1,
+                            receipt["fileIds"],
+                        ],
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest()
+                if original_fingerprint != fingerprint:
+                    raise ApiError(
+                        409,
+                        "IDEMPOTENCY_KEY_REUSED",
+                        "This confirmation key belongs to a different request.",
+                    )
+                earlier = self._view(sql, repo.get_submission(accepted["submission_id"]))
+                earlier["currentVersion"] = self._receipt(sql, accepted)
+                earlier["version"] = accepted["version_no"]
+                return earlier
             self._can_submit_to(actor, row["offering_id"], assignment_id)(sql)
             row = repo.get_assignment(assignment_id, lock=True)
             assignment = assignment_from_row(row)
@@ -396,8 +462,8 @@ class SubmissionService:
                 submitted_at=now,
                 is_late=assignment.is_late(now),
                 receipt_code="R-" + secrets.token_hex(8).upper(),
-                request_key=request_key or secrets.token_hex(16),
-                request_hash=hashlib.sha256("|".join(hashes).encode()).hexdigest(),
+                request_key=request_key,
+                request_hash=fingerprint,
                 file_ids=file_ids,
             )
             for file_id in file_ids:
@@ -506,13 +572,25 @@ class SubmissionService:
 
             identity = IdentityRepository(sql)
             owners = [identity.get_account(i) for i in view["recipientStudentIds"]]
+            from app.infrastructure.db.repositories.grading_repository import GradingRepository
+            from app.services.grading_service import GradingService
+
+            grade_row = GradingRepository(sql).lock_grade(submission_id)
+            grade = (
+                GradingService(self.database)._record(sql, actor, grade_row["grade_id"])
+                if grade_row
+                and (is_teacher(member) or grade_row["published_revision_no"] is not None)
+                else None
+            )
             return {
                 "submission": view,
                 "history": history,
                 "files": list({f["id"]: f for f in files}.values()),
                 "recipients": [account_view(o)["account"] for o in owners if o],
-                "grade": None,
-                "revisions": [],
+                "grade": grade,
+                "revisions": grade["revisions"]
+                if grade and grade["revisions"]
+                else ([grade["publishedRevision"]] if grade and grade["publishedRevision"] else []),
             }
 
     # ---------------------------------------------------------------- helpers
@@ -523,7 +601,7 @@ class SubmissionService:
             if row["group_id"]
             else None
         )
-        return submission_view(row, members)
+        return utc_payload(submission_view(row, members))
 
     @staticmethod
     def _visible_assignment(sql: Sql, actor: Actor, assignment_id: int):
@@ -565,27 +643,37 @@ class SubmissionService:
 
         return check
 
-    def get_submission_receipt(self, *, actor: Actor, assignment_id: int, key: str):
-        """Look up a hand-in by its receipt code (R-...) or the request key sent with it.
-        For the students it belongs to and the class professor."""
+    @staticmethod
+    def _receipt(sql, version):
+        files = sql.all(
+            "SELECT file_id FROM submission_files WHERE submission_id=%s AND version_no=%s ORDER BY file_no",
+            version["submission_id"],
+            version["version_no"],
+        )
+        return {
+            "submissionId": version["submission_id"],
+            "versionNo": version["version_no"],
+            "fileIds": [f["file_id"] for f in files],
+            "submittedByStudentId": version["submitted_by"],
+            "submittedAt": version["submitted_at"],
+            "isLate": bool(version["is_late"]),
+            "receiptCode": version["receipt_code"],
+        }
+
+    def get_submission_receipt(self, *, actor, assignment_id, key):
         with self.database.transaction() as connection:
             sql = Sql(connection)
-            row, member = self._visible_assignment(sql, actor, assignment_id)
-            version = AssessmentRepository(sql).find_version(assignment_id, key)
+            self._visible_assignment(sql, actor, assignment_id)
+            version = sql.one(
+                """SELECT v.* FROM submission_versions v JOIN submissions s ON s.submission_id=v.submission_id
+                WHERE s.assignment_id=%s AND v.submitted_by=%s AND v.request_key=%s""",
+                assignment_id,
+                actor.user_id,
+                key,
+            )
             if version is None:
                 raise not_found("Receipt")
-            owners = GroupRepository(sql).submission_members(version["submission_id"])
-            if actor.user_id not in owners and not is_teacher(member):
-                raise not_found("Receipt")
-            return {
-                "submissionId": version["submission_id"],
-                "versionNo": version["version_no"],
-                "fileIds": [int(x) for x in (version["file_ids"] or "").split(",") if x],
-                "submittedByStudentId": version["submitted_by"],
-                "submittedAt": version["submitted_at"],
-                "isLate": bool(version["is_late"]),
-                "receiptCode": version["receipt_code"],
-            }
+            return self._receipt(sql, version)
 
 
 def _notify_published(sql, actor, offering_id, assignment_id, title) -> None:

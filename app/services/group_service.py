@@ -26,12 +26,18 @@ def group_view(row: dict[str, Any], max_size: int) -> dict[str, Any]:
         "assignmentId": row["assignment_id"],
         "name": row["name"],
         "members": [
-            {"id": m["user_id"], "displayName": m["full_name"], "studentCode": m["student_code"]}
+            {
+                "id": m["user_id"],
+                "displayName": m["full_name"],
+                "studentCode": m["student_code"],
+                "status": m["account_status"],
+            }
             for m in row["members"]
         ],
         "size": len(row["members"]),
         "maxSize": max_size,
         "locked": bool(row["locked"]),
+        "lockedAt": row["locked_at"],
         "version": row["version"],
     }
 
@@ -55,7 +61,7 @@ class GroupService:
         """All groups of the assignment (students need them to pick one), and mine."""
         with self.database.transaction() as connection:
             sql = Sql(connection)
-            assignment, _ = self._group_assignment(sql, actor, assignment_id)
+            assignment, teacher = self._group_assignment(sql, actor, assignment_id)
             groups = GroupRepository(sql)
             return {
                 "assignmentId": assignment_id,
@@ -64,6 +70,9 @@ class GroupService:
                 "items": [
                     group_view(g, assignment["max_group_size"])
                     for g in groups.list_groups(assignment_id)
+                    if teacher
+                    or assignment["group_formation"] == "SELF"
+                    or any(m["user_id"] == actor.user_id for m in g["members"])
                 ],
             }
 
@@ -72,6 +81,14 @@ class GroupService:
             sql = Sql(connection)
             row = self._existing_group(sql, group_id)
             assignment, _ = self._group_assignment(sql, actor, row["assignment_id"])
+            if (
+                not is_teacher(
+                    require_member(CourseRepository(sql), actor, assignment["offering_id"])
+                )
+                and assignment["group_formation"] == "INSTRUCTOR"
+                and not any(m["user_id"] == actor.user_id for m in row["members"])
+            ):
+                raise not_found("Group")
             return group_view(row, assignment["max_group_size"])
 
     # ------------------------------------------------------------------ writing
@@ -87,6 +104,8 @@ class GroupService:
             sql = Sql(connection)
             assignment, teacher = self._group_assignment(sql, actor, assignment_id, write=True)
             groups = GroupRepository(sql)
+            if not teacher and assignment["group_formation"] != "SELF":
+                raise forbidden("The teaching team assigns groups for this assignment.")
             if teacher:
                 members = member_ids or []
                 self._check_members(sql, assignment, members)
@@ -121,7 +140,7 @@ class GroupService:
             sql = Sql(connection)
             groups = GroupRepository(sql)
             row = self._existing_group(sql, group_id)
-            assignment = AssessmentRepository(sql).get_assignment(row["assignment_id"])
+            assignment, _ = self._group_assignment(sql, actor, row["assignment_id"], write=True)
             require_teacher(CourseRepository(sql), actor, assignment["offering_id"])
             row = groups.get_group(group_id, lock=True)
             if name is not None:
@@ -149,7 +168,7 @@ class GroupService:
             assignment, teacher = self._group_assignment(
                 sql, actor, row["assignment_id"], write=True
             )
-            if teacher:
+            if teacher or assignment["group_formation"] != "SELF":
                 raise forbidden("Professors set members with the group's edit.")
             row = groups.get_group(group_id, lock=True)
             self._check_free(sql, row["assignment_id"], actor.user_id)
@@ -167,8 +186,10 @@ class GroupService:
             sql = Sql(connection)
             groups = GroupRepository(sql)
             row = self._existing_group(sql, group_id)
-            _, teacher = self._group_assignment(sql, actor, row["assignment_id"], write=True)
-            if teacher:
+            assignment, teacher = self._group_assignment(
+                sql, actor, row["assignment_id"], write=True
+            )
+            if teacher or assignment["group_formation"] != "SELF":
                 raise forbidden("Professors set members with the group's edit.")
             row = groups.get_group(group_id, lock=True)
             group = group_from_row(row)
@@ -203,6 +224,10 @@ class GroupService:
         if not assignment["is_group_work"]:
             raise conflict("NOT_GROUP_WORK", "This assignment is not group work.")
         if write:
+            courses.get_offering(assignment["offering_id"], lock=True)
+            assignment = AssessmentRepository(sql).get_assignment(assignment_id, lock=True)
+            if assignment["status"] == "ARCHIVED":
+                raise conflict("ASSIGNMENT_READ_ONLY", "Archived assignments are read-only.")
             if teacher:
                 require_teacher(courses, actor, assignment["offering_id"])
             else:

@@ -29,7 +29,12 @@ class Session:
         return self.client.get(url, **kw)
 
     def post(self, url, json=None, version=None, **kw):
-        return self.client.post(url, json=json, headers=self.headers(version), **kw)
+        headers = self.headers(version)
+        if url.endswith("/submissions"):
+            from uuid import uuid4
+
+            headers["Idempotency-Key"] = uuid4().hex
+        return self.client.post(url, json=json, headers=headers, **kw)
 
     def patch(self, url, json=None, version=None, **kw):
         return self.client.patch(url, json=json, headers=self.headers(version), **kw)
