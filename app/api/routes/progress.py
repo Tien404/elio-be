@@ -2,9 +2,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Response
 
-from app.api.dependencies import ContentServiceDep, MutationActorDep
+from app.api.dependencies import (
+    ActorDep,
+    ContentServiceDep,
+    CourseServiceDep,
+    MutationActorDep,
+)
 from app.api.schemas.content import Resource
-from app.services.course_service import CourseService
+from app.api.schemas.reports import ClassProgress
 
 router = APIRouter(tags=["progress"], responses={400: {"description": "Invalid request"}})
 
@@ -36,6 +41,15 @@ def unmark_resource_complete(
     return Response(status_code=204)
 
 
-@router.get("/offerings/{offeringId}/progress", operation_id="getCourseProgress", status_code=501)
-def get_course_progress(offeringId: int = Path(ge=1, le=2147483647)):
-    return CourseService().get_course_progress(offering_id=offeringId)
+@router.get(
+    "/offerings/{offeringId}/progress",
+    operation_id="getCourseProgress",
+    response_model=ClassProgress,
+    summary="Class professor: each student's materials done, work submitted, quizzes taken.",
+)
+def get_course_progress(
+    offeringId: Annotated[int, Path(ge=1, le=2147483647)],
+    actor: ActorDep,
+    service: CourseServiceDep,
+):
+    return service.get_course_progress(actor=actor, offering_id=offeringId)

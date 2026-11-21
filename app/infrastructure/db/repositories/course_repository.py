@@ -365,6 +365,43 @@ class CourseRepository:
         )
         return rows, total
 
+    def get_membership(self, membership_id: int, *, lock: bool = False):
+        row = self.sql.one(
+            f"""SELECT {_MEMBERSHIP_COLUMNS} FROM course_memberships AS m
+                WHERE m.membership_id = %s {"FOR UPDATE" if lock else ""}""",
+            membership_id,
+        )
+        return _membership(row) if row else None
+
+    def lead_membership(self, offering_id: int, *, lock: bool = False):
+        row = self.sql.one(
+            f"""SELECT {_MEMBERSHIP_COLUMNS} FROM course_memberships AS m
+                WHERE m.offering_id = %s AND m.course_role = 'PRIMARY_INSTRUCTOR'
+                  AND m.status = 'ACTIVE' {"FOR UPDATE" if lock else ""}""",
+            offering_id,
+        )
+        return _membership(row) if row else None
+
+    def save_membership(self, membership: CourseMembership) -> None:
+        """Store a changed role / status (version goes up)."""
+        self.sql.execute(
+            """UPDATE course_memberships SET course_role = %s, status = %s, version = version + 1
+               WHERE membership_id = %s""",
+            str(membership.course_role),
+            str(membership.status),
+            membership.membership_id,
+        )
+
+    def membership_account(self, membership_id: int) -> dict[str, Any]:
+        """The membership with the account fields its view needs."""
+        return self.sql.one(
+            f"""SELECT {_MEMBERSHIP_COLUMNS}, u.full_name, u.status AS account_status,
+                       u.role AS account_role, u.must_change_pwd
+                FROM course_memberships AS m JOIN users AS u ON u.user_id = m.user_id
+                WHERE m.membership_id = %s""",
+            membership_id,
+        )
+
     def insert_membership(
         self, *, offering_id: int, user_id: int, course_role: CourseRole
     ) -> CourseMembership:

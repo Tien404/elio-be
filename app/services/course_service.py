@@ -1,6 +1,7 @@
 import re
 import secrets
 import string
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -19,7 +20,9 @@ from app.domain.entities import (
     CourseOffering,
     CourseRegistration,
     CourseRole,
+    CourseState,
     DegreeLevel,
+    MembershipStatus,
     SystemRole,
 )
 from app.infrastructure.db.repositories.audit_repository import AuditRepository
@@ -31,11 +34,14 @@ from app.infrastructure.db.repositories.course_repository import (
     offering_from_row,
     registration_from_row,
 )
+from app.infrastructure.db.repositories.grading_repository import GradingRepository
 from app.infrastructure.db.repositories.identity_repository import (
     IdentityRepository,
     user_from_row,
 )
+from app.infrastructure.db.repositories.report_repository import ReportRepository
 from app.infrastructure.db.sql import Sql, is_unique_violation
+from app.services.access import is_teacher, require_member
 from app.services.auth_service import normalize_email
 
 
@@ -117,6 +123,25 @@ def _account_summary(user_id, full_name, status, role, must_change) -> dict[str,
         "status": str(status),
         "role": str(role),
         "mustChangePassword": bool(must_change),
+    }
+
+
+def progress_view(row: dict[str, Any]) -> dict[str, Any]:
+    """x of y per kind of work, and the overall percentage done."""
+    parts = {
+        kind: {"done": row[f"{kind}_done"], "total": row[f"{kind}_total"]}
+        for kind in ("materials", "assignments", "quizzes")
+    }
+    done = sum(p["done"] for p in parts.values())
+    total = sum(p["total"] for p in parts.values())
+    return {
+        "student": {
+            "id": row["user_id"],
+            "displayName": row["full_name"],
+            "studentCode": row["student_code"],
+        },
+        **parts,
+        "percent": round(done / total * 100, 2) if total else None,
     }
 
 
@@ -514,26 +539,194 @@ class CourseService:
             raise forbidden()
         return offering
 
-    def add_co_instructor(self, **kwargs: object):
-        raise FeatureNotImplemented("CourseService.add_co_instructor")
+    # ------------------------------------------------------------ teaching team
+    def add_co_instructor(self, *, actor: Actor, offering_id: int, email: str):
+        """The lead (or an admin) adds an active instructor to the teaching team."""
+        with self.database.transaction() as connection:
+            sql = Sql(connection)
+            repo = CourseRepository(sql)
+            self._require_lead(repo, actor, offering_id, allow_admin=True)
+            self._writable_class(repo, offering_id)
+            row = IdentityRepository(sql).find_by_email(normalize_email(email))
+            user = user_from_row(row) if row else None
+            if user is None or not user.has_role(SystemRole.INSTRUCTOR) or not user.is_active():
+                raise ApiError(422, "INSTRUCTOR_NOT_FOUND", "No active instructor has this email.")
+            existing = repo.find_membership(offering_id, user.user_id)
+            if existing is not None and existing.is_active():
+                raise conflict("ALREADY_MEMBER", "This person is already on the teaching team.")
+            if existing is not None:  # removed earlier: switch the old membership back on
+                existing.course_role = CourseRole.CO_INSTRUCTOR
+                existing.status = MembershipStatus.ACTIVE
+                repo.save_membership(existing)
+                membership_id = existing.membership_id
+            else:
+                membership_id = repo.insert_membership(
+                    offering_id=offering_id,
+                    user_id=user.user_id,
+                    course_role=CourseRole.CO_INSTRUCTOR,
+                ).membership_id
+            AuditRepository(sql).record(
+                actor_id=actor.user_id,
+                action="CO_INSTRUCTOR_ADDED",
+                target_type="MEMBERSHIP",
+                target_id=membership_id,
+            )
+            return self._membership_view(repo, membership_id)
 
-    def get_course_progress(self, **kwargs: object):
-        raise FeatureNotImplemented("CourseService.get_course_progress")
+    def remove_instructor_membership(self, *, actor: Actor, offering_id: int, membership_id: int):
+        """The lead or an admin removes a co-instructor; a co-instructor may also leave.
+        The lead cannot be removed (hand the class over first)."""
+        with self.database.transaction() as connection:
+            sql = Sql(connection)
+            repo = CourseRepository(sql)
+            target = repo.get_membership(membership_id, lock=True)
+            if target is None or target.offering_id != offering_id:
+                raise not_found("Membership")
+            leaving = target.user_id == actor.user_id and target.is_active()
+            if not leaving:
+                self._require_lead(repo, actor, offering_id, allow_admin=True)
+            self._writable_class(repo, offering_id)
+            if target.course_role == CourseRole.PRIMARY_INSTRUCTOR:
+                raise conflict(
+                    "LEAD_CANNOT_BE_REMOVED", "Hand the class over to another professor first."
+                )
+            if target.course_role != CourseRole.CO_INSTRUCTOR or not target.is_active():
+                raise conflict("NOT_A_CO_INSTRUCTOR", "This is not an active co-instructor.")
+            target.status = MembershipStatus.REMOVED
+            repo.save_membership(target)
+            AuditRepository(sql).record(
+                actor_id=actor.user_id,
+                action="CO_INSTRUCTOR_REMOVED",
+                target_type="MEMBERSHIP",
+                target_id=membership_id,
+            )
+            return self._membership_view(repo, membership_id)
 
-    def get_my_calendar(self, **kwargs: object):
-        raise FeatureNotImplemented("CourseService.get_my_calendar")
+    def transfer_leadership(self, *, actor: Actor, offering_id: int, membership_id: int):
+        """The lead (or an admin) hands the class to a co-instructor; the old lead stays
+        on the team as a co-instructor."""
+        with self.database.transaction() as connection:
+            sql = Sql(connection)
+            repo = CourseRepository(sql)
+            self._require_lead(repo, actor, offering_id, allow_admin=True)
+            self._writable_class(repo, offering_id)
+            target = repo.get_membership(membership_id, lock=True)
+            if (
+                target is None
+                or target.offering_id != offering_id
+                or target.course_role != CourseRole.CO_INSTRUCTOR
+                or not target.is_active()
+            ):
+                raise ApiError(
+                    422, "NOT_A_CO_INSTRUCTOR", "Add this professor to the teaching team first."
+                )
+            old_lead = repo.lead_membership(offering_id, lock=True)
+            if old_lead is not None:  # demote first: a class has one lead at a time
+                old_lead.course_role = CourseRole.CO_INSTRUCTOR
+                repo.save_membership(old_lead)
+            target.course_role = CourseRole.PRIMARY_INSTRUCTOR
+            repo.save_membership(target)
+            AuditRepository(sql).record(
+                actor_id=actor.user_id,
+                action="LEAD_TRANSFERRED",
+                target_type="MEMBERSHIP",
+                target_id=membership_id,
+                details={"previousLeadMembershipId": old_lead.membership_id if old_lead else None},
+            )
+            return self._membership_view(repo, membership_id)
 
-    def get_my_progress(self, **kwargs: object):
-        raise FeatureNotImplemented("CourseService.get_my_progress")
+    @staticmethod
+    def _writable_class(repo: CourseRepository, offering_id: int) -> None:
+        offering = repo.get_offering(offering_id, lock=True)
+        if offering.state == CourseState.ARCHIVED:
+            raise conflict("CLASS_READ_ONLY", "This class does not accept changes.")
+
+    @staticmethod
+    def _membership_view(repo: CourseRepository, membership_id: int) -> dict[str, Any]:
+        r = repo.membership_account(membership_id)
+        return membership_view(
+            membership_from_row(r),
+            _account_summary(
+                r["user_id"],
+                r["full_name"],
+                r["account_status"],
+                r["account_role"],
+                r["must_change_pwd"],
+            ),
+        )
+
+    def get_course_progress(self, *, actor: Actor, offering_id: int) -> dict[str, Any]:
+        """Class professor: how far each student is (materials done, work submitted,
+        quizzes taken)."""
+        with self.database.transaction() as connection:
+            sql = Sql(connection)
+            repo = CourseRepository(sql)
+            if not is_teacher(require_member(repo, actor, offering_id)):
+                raise forbidden()
+            offering = repo.offering_summary(offering_id)
+            return {
+                "offeringId": offering_id,
+                "courseCode": offering["course_code"],
+                "title": offering["title"],
+                "students": [
+                    progress_view(r) for r in ReportRepository(sql).class_progress(offering_id)
+                ],
+            }
+
+    def get_my_progress(self, *, actor: Actor) -> dict[str, Any]:
+        """Student: my progress in each of my classes."""
+        if actor.role != SystemRole.STUDENT:
+            raise forbidden()
+        with self.database.transaction() as connection:
+            sql = Sql(connection)
+            reports = ReportRepository(sql)
+            items = []
+            for offering_id in GradingRepository(sql).my_class_ids(actor.user_id):
+                offering = CourseRepository(sql).offering_summary(offering_id)
+                row = reports.student_progress(offering_id, actor.user_id)
+                items.append(
+                    {
+                        "offeringId": offering_id,
+                        "courseCode": offering["course_code"],
+                        "title": offering["title"],
+                        **progress_view(row),
+                    }
+                )
+            return {"items": items}
+
+    def get_my_calendar(self, *, actor: Actor, start=None, end=None) -> dict[str, Any]:
+        """Dated work from all my classes: assignments due and quizzes open, between start
+        (default: now) and end (default: 30 days later)."""
+        with self.database.transaction() as connection:
+            sql = Sql(connection)
+            now = sql.scalar("SELECT UTC_TIMESTAMP(6)")
+            start = start or now
+            end = end or start + timedelta(days=30)
+            if not start < end <= start + timedelta(days=366):
+                raise ApiError(400, "INVALID_REQUEST", "Pick a range of at most one year.")
+            rows = ReportRepository(sql).calendar(actor.user_id, start, end)
+            return {
+                "from": start,
+                "to": end,
+                "serverNow": now,
+                "items": [
+                    {
+                        "activityId": r["activity_id"],
+                        "type": r["activity_type"],
+                        "offeringId": r["offering_id"],
+                        "courseCode": r["course_code"],
+                        "classTitle": r["class_title"],
+                        "title": r["title"],
+                        "opensAt": r["open_at"],
+                        "dueAt": r["due_at"] or r["close_at"],
+                        "done": bool(r["done"]) if r["course_role"] == "STUDENT" else None,
+                    }
+                    for r in rows
+                ],
+            }
 
     def mark_resource_complete(self, **kwargs: object):
         raise FeatureNotImplemented("CourseService.mark_resource_complete")
-
-    def remove_instructor_membership(self, **kwargs: object):
-        raise FeatureNotImplemented("CourseService.remove_instructor_membership")
-
-    def transfer_leadership(self, **kwargs: object):
-        raise FeatureNotImplemented("CourseService.transfer_leadership")
 
     def unmark_resource_complete(self, **kwargs: object):
         raise FeatureNotImplemented("CourseService.unmark_resource_complete")
@@ -837,13 +1030,12 @@ class CourseService:
             assignments = sql.all(
                 """SELECT a.activity_id AS id,a.offering_id AS offeringId,a.title,
                     x.due_at AS dueAt,x.cutoff_at AS cutoffAt,
-                    CASE WHEN EXISTS (SELECT 1 FROM submissions AS s WHERE s.assignment_id=a.activity_id AND s.student_id=%s AND s.status='SUBMITTED') THEN 1 ELSE 0 END AS submitted
+                    CASE WHEN EXISTS (SELECT 1 FROM submissions AS s WHERE s.assignment_id=a.activity_id AND s.status='SUBMITTED' AND (s.student_id=me.user_id OR s.group_id IN (SELECT gm.group_id FROM group_members AS gm WHERE gm.student_id=me.user_id))) THEN 1 ELSE 0 END AS submitted
                 FROM activities AS a JOIN assignments AS x ON x.activity_id=a.activity_id
                 JOIN course_offerings AS o ON o.offering_id=a.offering_id
                 JOIN course_memberships AS me ON me.offering_id=o.offering_id AND me.user_id=%s AND me.status='ACTIVE'
                 WHERE o.state='OPEN' AND a.status='PUBLISHED'
                 ORDER BY x.due_at,a.activity_id""",
-                actor.user_id,
                 actor.user_id,
             )
             return {

@@ -22,7 +22,7 @@ def test_mysql_migrations_can_be_repeated_and_reads_are_read_only(database):
     apply_migrations(database)
     with database.read_connection() as connection:
         sql = Sql(connection)
-        assert sql.scalar("SELECT COUNT(*) FROM schema_migrations") == 8
+        assert sql.scalar("SELECT COUNT(*) FROM schema_migrations") == 11
         assert sql.scalar("SELECT @@session.time_zone") == "+00:00"
         assert sql.scalar("SELECT @@session.transaction_isolation") == "READ-COMMITTED"
         assert sql.scalar("SELECT UTC_TIMESTAMP(6)").tzinfo == UTC

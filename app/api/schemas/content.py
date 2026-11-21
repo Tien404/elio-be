@@ -84,3 +84,26 @@ class Resource(ResponseModel):
 
 class ResourcePage(PageMeta):
     items: list[Resource]
+
+
+class AnnouncementRequest(RequestModel):
+    title: Annotated[str, Field(min_length=1, max_length=200)]
+    body: Annotated[str, Field(min_length=1, max_length=20000)]
+
+
+class AnnouncementAuthor(ResponseModel):
+    id: Id
+    displayName: str
+
+
+class Announcement(ResponseModel):
+    id: Id
+    offeringId: Id
+    title: str
+    body: str
+    author: AnnouncementAuthor
+    publishedAt: Instant
+
+
+class AnnouncementPage(PageMeta):
+    items: list[Announcement]

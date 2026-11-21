@@ -16,6 +16,10 @@ from app.infrastructure.file_storage import FileStorage
 from app.services.auth_service import AuthService
 from app.services.content_service import ContentService
 from app.services.course_service import CourseService
+from app.services.grading_service import GradingService
+from app.services.group_service import GroupService
+from app.services.notification_service import NotificationService
+from app.services.quiz_service import QuizService
 from app.services.submission_service import SubmissionService
 
 
@@ -39,6 +43,22 @@ def get_submission_service(request: Request) -> SubmissionService:
 
 def get_course_service(request: Request) -> CourseService:
     return CourseService(request.app.state.database)
+
+
+def get_grading_service(request: Request) -> GradingService:
+    return GradingService(request.app.state.database)
+
+
+def get_notification_service(request: Request) -> NotificationService:
+    return NotificationService(request.app.state.database)
+
+
+def get_group_service(request: Request) -> GroupService:
+    return GroupService(request.app.state.database)
+
+
+def get_quiz_service(request: Request) -> QuizService:
+    return QuizService(request.app.state.database)
 
 
 def _resolve(request: Request, service: AuthService) -> SessionContext:
@@ -151,6 +171,10 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]
 ContentServiceDep = Annotated[ContentService, Depends(get_content_service)]
 SubmissionServiceDep = Annotated[SubmissionService, Depends(get_submission_service)]
+GradingServiceDep = Annotated[GradingService, Depends(get_grading_service)]
+QuizServiceDep = Annotated[QuizService, Depends(get_quiz_service)]
+GroupServiceDep = Annotated[GroupService, Depends(get_group_service)]
+NotificationServiceDep = Annotated[NotificationService, Depends(get_notification_service)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 ActorDep = Annotated[Actor, Depends(current_actor)]
 MutationActorDep = Annotated[Actor, Depends(mutation_actor)]

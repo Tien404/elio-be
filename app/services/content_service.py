@@ -7,7 +7,6 @@ from typing import Any, BinaryIO
 
 from app.core.errors import (
     ApiError,
-    FeatureNotImplemented,
     conflict,
     not_found,
     version_conflict,
@@ -19,9 +18,13 @@ from app.infrastructure.db.repositories.content_repository import (
     ContentRepository,
 )
 from app.infrastructure.db.repositories.course_repository import CourseRepository
+from app.infrastructure.db.repositories.notification_repository import (
+    NotificationRepository,
+)
 from app.infrastructure.db.sql import Sql, is_unique_violation
 from app.infrastructure.file_storage import EmptyFile, FileStorage, FileTooLarge
 from app.services.access import is_teacher, require_member, require_student, require_teacher
+from app.services.notification_service import notify_course
 
 MAX_MATERIAL_BYTES = 50_000_000  # report: materials up to 50MB (decimal)
 _URL = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
@@ -424,11 +427,57 @@ class ContentService:
         with self.database.read_connection() as connection:
             return file_view(ContentRepository(Sql(connection)).get_file(file_id))
 
-    def create_announcement(self, **kwargs: object):
-        raise FeatureNotImplemented("ContentService.create_announcement")
+    # ------------------------------------------------------------ announcements
+    def create_announcement(self, *, actor: Actor, offering_id: int, title: str, body: str):
+        """A professor posts a message to the class; members get it in their inbox."""
+        title, body = title.strip(), body.strip()
+        if not title or not body:
+            raise ApiError(400, "INVALID_REQUEST", "Title and message must not be blank.")
+        with self.database.transaction() as connection:
+            sql = Sql(connection)
+            require_teacher(CourseRepository(sql), actor, offering_id)
+            repo = NotificationRepository(sql)
+            announcement_id = repo.insert_announcement(
+                offering_id=offering_id, author_id=actor.user_id, title=title, body=body
+            )
+            notify_course(
+                sql,
+                offering_id=offering_id,
+                actor_id=actor.user_id,
+                event_type="ANNOUNCEMENT",
+                title=title,
+                target_type="ANNOUNCEMENT",
+                target_id=announcement_id,
+                event_key=f"ANNOUNCEMENT:{announcement_id}",
+                students_only=False,  # co-instructors see it too
+            )
+            return announcement_view(repo.get_announcement(announcement_id))
 
-    def list_announcements(self, **kwargs: object):
-        raise FeatureNotImplemented("ContentService.list_announcements")
+    def list_announcements(self, *, actor: Actor, offering_id: int, page: int, page_size: int):
+        with self.database.transaction() as connection:
+            sql = Sql(connection)
+            require_member(CourseRepository(sql), actor, offering_id)
+            rows, total = NotificationRepository(sql).list_announcements(
+                offering_id, offset=(page - 1) * page_size, limit=page_size
+            )
+            return {
+                "items": [announcement_view(r) for r in rows],
+                "page": page,
+                "pageSize": page_size,
+                "totalItems": total,
+                "totalPages": (total + page_size - 1) // page_size,
+            }
+
+
+def announcement_view(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": row["announcement_id"],
+        "offeringId": row["offering_id"],
+        "title": row["title"],
+        "body": row["body"],
+        "author": {"id": row["author_id"], "displayName": row["author_name"]},
+        "publishedAt": row["published_at"],
+    }
 
 
 def _check_staged_file(file: dict[str, Any] | None, offering_id: int) -> None:

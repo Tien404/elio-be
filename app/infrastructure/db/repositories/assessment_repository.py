@@ -7,11 +7,13 @@ from app.domain.entities import Assignment, PublishStatus
 from app.infrastructure.db.sql import Sql
 
 _ASSIGNMENT_SELECT = """SELECT a.activity_id, a.offering_id, a.topic_id, a.title, a.max_score,
-        a.status, a.version, a.weight_pct, a.is_mandatory, x.instructions, x.open_at, x.due_at, x.cutoff_at
+        a.status, a.version, a.weight_pct, a.is_mandatory, x.instructions, x.open_at, x.due_at, x.cutoff_at,
+        x.is_group_work, x.max_group_size
     FROM activities AS a
     JOIN assignments AS x ON x.activity_id = a.activity_id"""
 
 _SUBMISSION_SELECT = """SELECT s.submission_id, s.assignment_id, s.student_id, s.status,
+        s.owner_type, s.group_id,
         s.version, v.version_no, v.submitted_by, v.submitted_at, v.is_late, v.receipt_code,
         (SELECT GROUP_CONCAT(sf.file_id ORDER BY sf.file_no SEPARATOR ',')
          FROM submission_files AS sf
@@ -49,14 +51,16 @@ class AssessmentRepository:
             data["status"],
         )
         self.sql.execute(
-            """INSERT INTO assignments (activity_id, instructions, open_at, due_at, cutoff_at)
-               VALUES (%s, %s, %s, %s,
-                       %s)""",
+            """INSERT INTO assignments (activity_id, instructions, open_at, due_at, cutoff_at,
+                   is_group_work, max_group_size)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             activity_id,
             data["instructions"] or "",
             _utc(data["openAt"]),
             _utc(data["dueAt"]),
             _utc(data["cutoffAt"]),
+            data["mode"] == "GROUP",
+            data["maxGroupSize"],
         )
         return activity_id
 
@@ -101,12 +105,14 @@ class AssessmentRepository:
         )
         self.sql.execute(
             """UPDATE assignments SET instructions=%s, open_at=%s,
-                   due_at=%s, cutoff_at=%s
+                   due_at=%s, cutoff_at=%s, is_group_work=%s, max_group_size=%s
                WHERE activity_id=%s""",
             data["instructions"] or "",
             _utc(data["openAt"]),
             _utc(data["dueAt"]),
             _utc(data["cutoffAt"]),
+            data["mode"] == "GROUP",
+            data["maxGroupSize"],
             assignment_id,
         )
 
@@ -135,6 +141,23 @@ class AssessmentRepository:
                 """SELECT COUNT(*) FROM grades AS g JOIN submissions AS s
                ON s.submission_id=g.submission_id WHERE s.assignment_id=%s""",
                 assignment_id,
+            )
+        )
+
+    def student_has_grade(self, assignment_id: int, student_id: int) -> bool:
+        """A grade on the student's own submission or on their group's."""
+        return bool(
+            self.sql.scalar(
+                """SELECT COUNT(*) FROM grades AS g
+                   JOIN submissions AS s ON s.submission_id = g.submission_id
+                   WHERE s.assignment_id = %s
+                     AND (s.student_id = %s OR s.group_id IN (
+                          SELECT m.group_id FROM group_members AS m
+                          WHERE m.assignment_id = %s AND m.student_id = %s))""",
+                assignment_id,
+                student_id,
+                assignment_id,
+                student_id,
             )
         )
 
@@ -198,6 +221,41 @@ class AssessmentRepository:
             version_no,
             submission_id,
         )
+
+    def lock_submission_by_id(self, submission_id: int) -> dict[str, Any] | None:
+        return self.sql.one(
+            "SELECT submission_id, status, version FROM submissions WHERE submission_id = %s FOR UPDATE",
+            submission_id,
+        )
+
+    def find_version(self, assignment_id: int, key: str) -> dict[str, Any] | None:
+        """A handed-in version by its receipt code or by the request key sent with it."""
+        return self.sql.one(
+            """SELECT v.submission_id, v.version_no, v.submitted_by, v.submitted_at, v.is_late,
+                      v.receipt_code,
+                      (SELECT GROUP_CONCAT(f.file_id ORDER BY f.file_no SEPARATOR ',')
+                       FROM submission_files AS f
+                       WHERE f.submission_id = v.submission_id AND f.version_no = v.version_no)
+                          AS file_ids
+               FROM submission_versions AS v
+               JOIN submissions AS s ON s.submission_id = v.submission_id
+               WHERE s.assignment_id = %s AND (v.receipt_code = %s OR v.request_key = %s)""",
+            assignment_id,
+            key,
+            key,
+        )
+
+    def find_request(self, student_id: int, request_key: str) -> int | None:
+        """The submission a student already handed in with this request key."""
+        return self.sql.scalar(
+            """SELECT submission_id FROM submission_versions
+               WHERE submitted_by = %s AND request_key = %s""",
+            student_id,
+            request_key,
+        )
+
+    def find_group_submission(self, group_id: int) -> dict[str, Any] | None:
+        return self.sql.one(f"{_SUBMISSION_SELECT} WHERE s.group_id = %s", group_id)
 
     def get_submission(self, submission_id: int) -> dict[str, Any] | None:
         return self.sql.one(f"{_SUBMISSION_SELECT} WHERE s.submission_id = %s", submission_id)

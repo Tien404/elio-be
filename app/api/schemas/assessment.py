@@ -13,7 +13,8 @@ class AssignmentRequest(RequestModel):
     title: Title
     topicId: Id | None = None
     instructions: str | None = None
-    mode: Literal["INDIVIDUAL"] = "INDIVIDUAL"
+    mode: Literal["INDIVIDUAL", "GROUP"] = "INDIVIDUAL"
+    maxGroupSize: Annotated[int, Field(ge=1, le=20, description="Group work only")] | None = None
     status: Literal["DRAFT", "PUBLISHED"]
     openAt: AwareDatetime
     dueAt: AwareDatetime
@@ -36,7 +37,8 @@ class UpdateAssignmentRequest(RequestModel):
     title: Title | None = None
     topicId: Id | None = None
     instructions: str | None = None
-    mode: Literal["INDIVIDUAL"] | None = None
+    mode: Literal["INDIVIDUAL", "GROUP"] | None = None
+    maxGroupSize: Annotated[int, Field(ge=1, le=20)] | None = None
     status: Literal["DRAFT", "PUBLISHED", "ARCHIVED"] | None = None
     openAt: AwareDatetime | None = None
     dueAt: AwareDatetime | None = None
@@ -48,7 +50,7 @@ class UpdateAssignmentRequest(RequestModel):
 
     @model_validator(mode="after")
     def nonnullable(self):
-        for name in self.model_fields_set - {"topicId", "instructions"}:
+        for name in self.model_fields_set - {"topicId", "instructions", "maxGroupSize"}:
             if getattr(self, name) is None:
                 raise ValueError(f"{name} must not be null")
         return self
@@ -61,6 +63,7 @@ class Assignment(ResponseModel):
     title: str
     instructions: str | None
     mode: Literal["INDIVIDUAL", "GROUP"]
+    maxGroupSize: int | None
     status: Literal["DRAFT", "PUBLISHED", "ARCHIVED"]
     openAt: Instant
     dueAt: Instant
@@ -80,6 +83,18 @@ class AssignmentPage(PageMeta):
 class SubmissionRequest(RequestModel):
     expectedVersion: Annotated[int, Field(ge=0)]
     fileIds: Annotated[list[Id], Field(min_length=1, max_length=5)]
+    requestKey: (
+        Annotated[
+            str,
+            Field(
+                min_length=16,
+                max_length=128,
+                pattern=r"^[A-Za-z0-9._:-]+$",
+                description="Optional client key; sending it again returns the same hand-in",
+            ),
+        ]
+        | None
+    ) = None
 
 
 class SubmissionVersion(ResponseModel):

@@ -1,10 +1,10 @@
+import json
 from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import Settings
 from app.core.errors import (
     ApiError,
-    FeatureNotImplemented,
     conflict,
     forbidden,
     not_found,
@@ -28,6 +28,7 @@ from app.infrastructure.db.repositories.identity_repository import (
     account_view,
     user_from_row,
 )
+from app.infrastructure.db.repositories.report_repository import ReportRepository
 from app.infrastructure.db.sql import Sql, is_unique_violation
 
 MIN_PASSWORD_LENGTH = 12
@@ -418,11 +419,88 @@ class AuthService:
             "totalPages": (total + page_size - 1) // page_size,
         }
 
-    def admin_list_audit_entries(self, **kwargs: object):
-        raise FeatureNotImplemented("AuthService.admin_list_audit_entries")
+    def admin_list_courses(
+        self,
+        *,
+        actor: Actor,
+        page: int,
+        page_size: int,
+        q: str | None,
+        semester: str | None,
+        status: str | None,
+    ) -> dict[str, Any]:
+        """Admin: every class with its lead professor and number of students."""
+        _require_admin(actor)
+        with self.database.read_connection() as connection:
+            rows, total = ReportRepository(Sql(connection)).admin_classes(
+                q=q,
+                semester=semester,
+                status=status,
+                offset=(page - 1) * page_size,
+                limit=page_size,
+            )
+        items = [
+            {
+                "id": r["offering_id"],
+                "courseCode": r["course_code"],
+                "courseName": r["course_name"],
+                "title": r["title"],
+                "semester": r["semester"],
+                "sectionCode": r["section_code"],
+                "status": r["state"],
+                "lead": {"id": r["lead_id"], "displayName": r["lead_name"]}
+                if r["lead_id"]
+                else None,
+                "studentCount": r["student_count"],
+            }
+            for r in rows
+        ]
+        return _paged(items, page, page_size, total)
 
-    def admin_list_courses(self, **kwargs: object):
-        raise FeatureNotImplemented("AuthService.admin_list_courses")
+    def admin_list_audit_entries(
+        self,
+        *,
+        actor: Actor,
+        page: int,
+        page_size: int,
+        actor_id: int | None,
+        action: str | None,
+        target_type: str | None,
+    ) -> dict[str, Any]:
+        """Admin: the audit log, newest first."""
+        _require_admin(actor)
+        with self.database.read_connection() as connection:
+            rows, total = ReportRepository(Sql(connection)).audit_entries(
+                actor_id=actor_id,
+                action=action,
+                target_type=target_type,
+                offset=(page - 1) * page_size,
+                limit=page_size,
+            )
+        items = [
+            {
+                "id": r["audit_id"],
+                "actor": {"id": r["actor_id"], "displayName": r["actor_name"]},
+                "action": r["action_type"],
+                "targetType": r["target_type"],
+                "targetId": r["target_id"],
+                "reason": r["reason"],
+                "details": json.loads(r["details"] or "{}"),
+                "createdAt": r["created_at"],
+            }
+            for r in rows
+        ]
+        return _paged(items, page, page_size, total)
+
+
+def _paged(items: list, page: int, page_size: int, total: int) -> dict[str, Any]:
+    return {
+        "items": items,
+        "page": page,
+        "pageSize": page_size,
+        "totalItems": total,
+        "totalPages": (total + page_size - 1) // page_size,
+    }
 
 
 def _require_admin(actor: Actor) -> None:

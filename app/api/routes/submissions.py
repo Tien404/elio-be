@@ -3,9 +3,13 @@ from typing import Annotated
 from fastapi import APIRouter, Path, Query, Response
 
 from app.api.dependencies import ActorDep, MutationActorDep, SubmissionServiceDep
-from app.api.schemas.assessment import Submission, SubmissionPage, SubmissionRequest
+from app.api.schemas.assessment import (
+    Submission,
+    SubmissionPage,
+    SubmissionRequest,
+    SubmissionVersion,
+)
 from app.api.schemas.views import SubmissionHistory
-from app.services.submission_service import SubmissionService
 
 router = APIRouter(tags=["submissions"], responses={400: {"description": "Invalid request"}})
 
@@ -53,6 +57,7 @@ def confirm_submission(
         assignment_id=assignment_id,
         expected_version=body.expectedVersion,
         file_ids=body.fileIds,
+        request_key=body.requestKey,
     )
     response.headers["Location"] = f"/api/v1/submissions/{view['id']}"
     return view
@@ -80,15 +85,16 @@ def get_submission(
 @router.get(
     "/assignments/{assignmentId}/submission-receipts/{requestKey}",
     operation_id="getSubmissionReceipt",
-    status_code=501,
+    response_model=SubmissionVersion,
+    summary="Find a hand-in by its receipt code (R-...) or the requestKey sent with it.",
 )
 def get_submission_receipt(
-    assignmentId: int = Path(ge=1, le=2147483647),
-    requestKey: str = Path(min_length=16, max_length=128),
+    assignment_id: AssignmentId,
+    request_key: Annotated[str, Path(alias="requestKey", min_length=16, max_length=128)],
+    actor: ActorDep,
+    service: SubmissionServiceDep,
 ):
-    return SubmissionService().get_submission_receipt(
-        assignment_id=assignmentId, request_key=requestKey
-    )
+    return service.get_submission_receipt(actor=actor, assignment_id=assignment_id, key=request_key)
 
 
 @router.get(

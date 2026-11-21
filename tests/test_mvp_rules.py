@@ -71,11 +71,13 @@ def test_submission_checks_database_window(monkeypatch, offset, accepted):
         "version": 1,
         "open_at": NOW,
         "cutoff_at": NOW + timedelta(seconds=10),
+        "is_group_work": 0,
+        "max_group_size": None,
     }
     repo = SimpleNamespace(
         get_assignment=lambda *a, **k: row,
         db_now=lambda: NOW + timedelta(seconds=offset),
-        has_grade=lambda id: False,
+        student_has_grade=lambda assignment_id, student_id: False,
     )
     monkeypatch.setattr(module, "CourseRepository", lambda sql: AccessRepository())
     monkeypatch.setattr(module, "AssessmentRepository", lambda sql: repo)
@@ -159,6 +161,8 @@ def test_published_assignment_rejects_shorten_and_edit_after_grade(monkeypatch):
         "version": 1,
         "open_at": NOW,
         "cutoff_at": NOW + timedelta(days=2),
+        "is_group_work": 0,
+        "max_group_size": None,
     }
     repo = SimpleNamespace(
         get_assignment=lambda *a, **k: row, attachment_ids=lambda id: [], has_grade=lambda id: True

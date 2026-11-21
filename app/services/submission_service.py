@@ -7,7 +7,6 @@ from typing import Any, BinaryIO
 
 from app.core.errors import (
     ApiError,
-    FeatureNotImplemented,
     not_found,
     version_conflict,
 )
@@ -20,10 +19,12 @@ from app.infrastructure.db.repositories.assessment_repository import (
 from app.infrastructure.db.repositories.audit_repository import AuditRepository
 from app.infrastructure.db.repositories.content_repository import ContentRepository
 from app.infrastructure.db.repositories.course_repository import CourseRepository
+from app.infrastructure.db.repositories.group_repository import GroupRepository
 from app.infrastructure.db.sql import Sql
 from app.infrastructure.file_storage import FileStorage
 from app.services.access import is_teacher, require_member, require_student, require_teacher
 from app.services.content_service import stage_file
+from app.services.notification_service import notify_course
 
 MAX_SUBMISSION_BYTES = 20_000_000  # report: submission files up to 20 MB each (decimal)
 MAX_SUBMISSION_FILES = 5
@@ -36,7 +37,8 @@ def assignment_view(row: dict[str, Any]) -> dict[str, Any]:
         "topicId": row["topic_id"],
         "title": row["title"],
         "instructions": row["instructions"] or None,
-        "mode": "INDIVIDUAL",
+        "mode": "GROUP" if row["is_group_work"] else "INDIVIDUAL",
+        "maxGroupSize": row["max_group_size"],
         "status": row["status"],
         "openAt": row["open_at"],
         "dueAt": row["due_at"],
@@ -48,8 +50,9 @@ def assignment_view(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def submission_view(row: dict[str, Any]) -> dict[str, Any]:
-    """Submission response shape (OpenAPI contract); currentVersion is the one that counts."""
+def submission_view(row: dict[str, Any], members: list[int] | None = None) -> dict[str, Any]:
+    """Submission response shape (OpenAPI contract); currentVersion is the one that counts.
+    Group submissions: subject = the group, recipients = its members."""
     current = None
     if row["version_no"]:
         current = {
@@ -64,9 +67,9 @@ def submission_view(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["submission_id"],
         "assignmentId": row["assignment_id"],
-        "subjectType": "STUDENT",
-        "subjectId": row["student_id"],
-        "recipientStudentIds": [row["student_id"]],
+        "subjectType": "GROUP" if row["group_id"] else "STUDENT",
+        "subjectId": row["group_id"] or row["student_id"],
+        "recipientStudentIds": members if row["group_id"] else [row["student_id"]],
         "currentVersion": current,
         "version": row["version"],
         "status": row["status"],
@@ -78,6 +81,11 @@ def check_submission_file_access(sql: Sql, actor: Actor, file: dict[str, Any]) -
     require_member(CourseRepository(sql), actor, file["offering_id"])
     if file["uploaded_by"] == actor.user_id:
         return
+    if file["assignment_id"] is not None:  # group mates may open each other's hand-in files
+        groups = GroupRepository(sql)
+        mine = groups.group_of(file["assignment_id"], actor.user_id)
+        if mine is not None and mine == groups.group_of(file["assignment_id"], file["uploaded_by"]):
+            return
     membership = CourseRepository(sql).find_membership(file["offering_id"], actor.user_id)
     if membership is None or not membership.is_active() or not is_teacher(membership):
         raise not_found("File")
@@ -117,6 +125,10 @@ class SubmissionService:
         data["title"] = data["title"].strip()
         if not data["openAt"] <= data["dueAt"] <= data["cutoffAt"]:
             raise ApiError(400, "INVALID_SCHEDULE", "Opening must be before due date and cutoff.")
+        if (data["mode"] == "GROUP") != (data.get("maxGroupSize") is not None):
+            raise ApiError(
+                400, "INVALID_REQUEST", "Group work needs maxGroupSize; individual work has none."
+            )
         if data["topicId"] is not None:
             topic = ContentRepository(sql).get_topic(data["topicId"])
             if topic is None or topic.offering_id != offering_id:
@@ -163,6 +175,8 @@ class SubmissionService:
                 target_id=assignment_id,
                 details={"status": data["status"]},
             )
+            if data["status"] == "PUBLISHED":
+                _notify_published(sql, actor, offering_id, assignment_id, data["title"])
             return self._assignment_view(sql, repo.get_assignment(assignment_id))
 
     def list_assignments(self, *, actor, offering_id, page, page_size):
@@ -209,6 +223,7 @@ class SubmissionService:
                     "maxScore",
                     "weight",
                     "mandatory",
+                    "maxGroupSize",
                 ]
             }
             data["fileIds"] = repo.attachment_ids(assignment_id)
@@ -254,6 +269,20 @@ class SubmissionService:
             repo.set_attachments(assignment_id, data["fileIds"])
             for file_id in data["fileIds"]:
                 ContentRepository(sql).attach_file(file_id)
+            offering_id = row["offering_id"]
+            if old["status"] == "DRAFT" and data["status"] == "PUBLISHED":
+                _notify_published(sql, actor, offering_id, assignment_id, data["title"])
+            elif old["status"] == "PUBLISHED" and data["dueAt"] != old["dueAt"]:
+                notify_course(
+                    sql,
+                    offering_id=offering_id,
+                    actor_id=actor.user_id,
+                    event_type="DUE_DATE_CHANGED",
+                    title=data["title"],
+                    target_type="ASSIGNMENT",
+                    target_id=assignment_id,
+                    event_key=f"DUE_DATE_CHANGED:{assignment_id}:{data['dueAt'].isoformat()}",
+                )
             return self._assignment_view(sql, repo.get_assignment(assignment_id))
 
     # ------------------------------------------------------------- submissions
@@ -302,9 +331,16 @@ class SubmissionService:
         )
 
     def confirm_submission(
-        self, *, actor: Actor, assignment_id: int, expected_version: int, file_ids: list[int]
+        self,
+        *,
+        actor: Actor,
+        assignment_id: int,
+        expected_version: int,
+        file_ids: list[int],
+        request_key: str | None = None,
     ) -> dict[str, Any]:
-        """Create one version; callers must reconcile uncertain responses before resubmitting."""
+        """Create one version. A client may send its own request_key: sending the same key
+        again (e.g. after a lost response) returns the earlier hand-in instead of a new one."""
         if not 1 <= len(file_ids) <= MAX_SUBMISSION_FILES or len(set(file_ids)) != len(file_ids):
             raise ApiError(400, "INVALID_REQUEST", "Submit 1 to 5 different files.")
         with self.database.transaction() as connection:
@@ -313,11 +349,22 @@ class SubmissionService:
             row = repo.get_assignment(assignment_id)
             if row is None:
                 raise not_found("Assignment")
+            if request_key and (done := repo.find_request(actor.user_id, request_key)):
+                earlier = repo.get_submission(done)
+                if earlier["assignment_id"] != assignment_id:
+                    raise ApiError(409, "REQUEST_KEY_USED", "This requestKey was used elsewhere.")
+                require_member(CourseRepository(sql), actor, row["offering_id"])
+                return self._view(sql, earlier)  # already handed in: same answer again
             self._can_submit_to(actor, row["offering_id"], assignment_id)(sql)
             row = repo.get_assignment(assignment_id, lock=True)
             assignment = assignment_from_row(row)
 
-            stream = repo.lock_submission(assignment_id=assignment_id, student_id=actor.user_id)
+            group_id = None
+            if row["is_group_work"]:  # the group's one submission
+                group_id = GroupRepository(sql).group_of(assignment_id, actor.user_id)
+                stream = GroupRepository(sql).lock_group_submission(group_id)
+            else:
+                stream = repo.lock_submission(assignment_id=assignment_id, student_id=actor.user_id)
             current = stream["version"] if stream else 0
             if expected_version != current:
                 raise version_conflict(current)
@@ -329,11 +376,16 @@ class SubmissionService:
                 _check_own_staged_file(file, actor, assignment_id)
                 hashes.append(f"{file_id}:{file['sha256']}")
 
-            submission_id = (
-                stream["submission_id"]
-                if stream
-                else repo.insert_submission(assignment_id=assignment_id, student_id=actor.user_id)
-            )
+            if stream:
+                submission_id = stream["submission_id"]
+            elif group_id is not None:
+                submission_id = GroupRepository(sql).insert_group_submission(
+                    assignment_id, group_id
+                )
+            else:
+                submission_id = repo.insert_submission(
+                    assignment_id=assignment_id, student_id=actor.user_id
+                )
             now = repo.db_now()
             if not assignment.is_open(now):
                 raise ApiError(409, "SUBMISSION_WINDOW_CLOSED", "The submission cutoff has passed.")
@@ -344,12 +396,14 @@ class SubmissionService:
                 submitted_at=now,
                 is_late=assignment.is_late(now),
                 receipt_code="R-" + secrets.token_hex(8).upper(),
-                request_key=secrets.token_hex(16),
+                request_key=request_key or secrets.token_hex(16),
                 request_hash=hashlib.sha256("|".join(hashes).encode()).hexdigest(),
                 file_ids=file_ids,
             )
             for file_id in file_ids:
                 files.attach_file(file_id)
+            if group_id is not None and current == 0:  # first hand-in fixes the members
+                GroupRepository(sql).freeze_roster(submission_id, group_id)
             AuditRepository(sql).record(
                 actor_id=actor.user_id,
                 action="SUBMISSION_CONFIRMED",
@@ -357,19 +411,21 @@ class SubmissionService:
                 target_id=submission_id,
                 details={"versionNo": current + 1, "files": len(file_ids)},
             )
-            view = repo.get_submission(submission_id)
-        return submission_view(view)
+            return self._view(sql, repo.get_submission(submission_id))
 
     def get_my_submission(self, *, actor: Actor, assignment_id: int) -> dict[str, Any]:
         with self.database.transaction() as connection:
             sql = Sql(connection)
-            self._visible_assignment(sql, actor, assignment_id)
-            row = AssessmentRepository(sql).find_submission(
-                assignment_id=assignment_id, student_id=actor.user_id
-            )
-        if row is None:
-            raise ApiError(404, "NOT_SUBMITTED", "You have not submitted anything yet.")
-        return submission_view(row)
+            assignment, _ = self._visible_assignment(sql, actor, assignment_id)
+            repo = AssessmentRepository(sql)
+            if assignment["is_group_work"]:
+                group_id = GroupRepository(sql).group_of(assignment_id, actor.user_id)
+                row = repo.find_group_submission(group_id) if group_id else None
+            else:
+                row = repo.find_submission(assignment_id=assignment_id, student_id=actor.user_id)
+            if row is None:
+                raise ApiError(404, "NOT_SUBMITTED", "You have not submitted anything yet.")
+            return self._view(sql, row)
 
     def list_submissions(
         self, *, actor: Actor, assignment_id: int, page: int, page_size: int
@@ -387,7 +443,7 @@ class SubmissionService:
             rows, total = repo.list_submissions(
                 assignment_id, offset=(page - 1) * page_size, limit=page_size
             )
-        return _page([submission_view(r) for r in rows], page, page_size, total)
+            return _page([self._view(sql, r) for r in rows], page, page_size, total)
 
     def get_submission(self, *, actor: Actor, submission_id: int) -> dict[str, Any]:
         """The student who owns it, or the class professor."""
@@ -398,15 +454,11 @@ class SubmissionService:
             if row is None:
                 raise not_found("Submission")
             assignment = repo.get_assignment(row["assignment_id"])
-            require_member(CourseRepository(sql), actor, assignment["offering_id"])
-            if row["student_id"] != actor.user_id:
-                assignment = repo.get_assignment(row["assignment_id"])
-                membership = CourseRepository(sql).find_membership(
-                    assignment["offering_id"], actor.user_id
-                )
-                if membership is None or not membership.is_active() or not is_teacher(membership):
-                    raise not_found("Submission")
-        return submission_view(row)
+            member = require_member(CourseRepository(sql), actor, assignment["offering_id"])
+            view = self._view(sql, row)
+            if actor.user_id not in view["recipientStudentIds"] and not is_teacher(member):
+                raise not_found("Submission")
+            return view
 
     def get_submission_history(self, *, actor, submission_id):
         with self.database.transaction() as connection:
@@ -417,7 +469,8 @@ class SubmissionService:
                 raise not_found("Submission")
             assignment = repo.get_assignment(row["assignment_id"])
             member = require_member(CourseRepository(sql), actor, assignment["offering_id"])
-            if row["student_id"] != actor.user_id and not is_teacher(member):
+            view = self._view(sql, row)
+            if actor.user_id not in view["recipientStudentIds"] and not is_teacher(member):
                 raise not_found("Submission")
             versions = sql.all(
                 "SELECT version_no,submitted_by,submitted_at,is_late,receipt_code FROM submission_versions WHERE submission_id=%s ORDER BY version_no DESC",
@@ -451,17 +504,27 @@ class SubmissionService:
             from app.infrastructure.db.repositories.identity_repository import IdentityRepository
             from app.services.auth_service import account_view
 
-            owner = IdentityRepository(sql).get_account(row["student_id"])
+            identity = IdentityRepository(sql)
+            owners = [identity.get_account(i) for i in view["recipientStudentIds"]]
             return {
-                "submission": submission_view(row),
+                "submission": view,
                 "history": history,
                 "files": list({f["id"]: f for f in files}.values()),
-                "recipients": [account_view(owner)["account"]] if owner else [],
+                "recipients": [account_view(o)["account"] for o in owners if o],
                 "grade": None,
                 "revisions": [],
             }
 
     # ---------------------------------------------------------------- helpers
+    @staticmethod
+    def _view(sql: Sql, row: dict[str, Any]) -> dict[str, Any]:
+        members = (
+            GroupRepository(sql).submission_members(row["submission_id"])
+            if row["group_id"]
+            else None
+        )
+        return submission_view(row, members)
+
     @staticmethod
     def _visible_assignment(sql: Sql, actor: Actor, assignment_id: int):
         """Members see published boxes; the professor also sees drafts."""
@@ -492,25 +555,50 @@ class SubmissionService:
                     "SUBMISSION_WINDOW_CLOSED",
                     "Submissions are accepted only between opening and cutoff.",
                 )
-            if repo.has_grade(assignment_id):
+            if (
+                row["is_group_work"]
+                and GroupRepository(sql).group_of(assignment_id, actor.user_id) is None
+            ):
+                raise ApiError(409, "NO_GROUP", "Join or create a group before handing in.")
+            if repo.student_has_grade(assignment_id, actor.user_id):
                 raise ApiError(409, "DEADLINE_LOCKED", "Graded work cannot be resubmitted.")
 
         return check
 
-    def create_group(self, **kwargs: object):
-        raise FeatureNotImplemented("SubmissionService.create_group")
+    def get_submission_receipt(self, *, actor: Actor, assignment_id: int, key: str):
+        """Look up a hand-in by its receipt code (R-...) or the request key sent with it.
+        For the students it belongs to and the class professor."""
+        with self.database.transaction() as connection:
+            sql = Sql(connection)
+            row, member = self._visible_assignment(sql, actor, assignment_id)
+            version = AssessmentRepository(sql).find_version(assignment_id, key)
+            if version is None:
+                raise not_found("Receipt")
+            owners = GroupRepository(sql).submission_members(version["submission_id"])
+            if actor.user_id not in owners and not is_teacher(member):
+                raise not_found("Receipt")
+            return {
+                "submissionId": version["submission_id"],
+                "versionNo": version["version_no"],
+                "fileIds": [int(x) for x in (version["file_ids"] or "").split(",") if x],
+                "submittedByStudentId": version["submitted_by"],
+                "submittedAt": version["submitted_at"],
+                "isLate": bool(version["is_late"]),
+                "receiptCode": version["receipt_code"],
+            }
 
-    def get_group(self, **kwargs: object):
-        raise FeatureNotImplemented("SubmissionService.get_group")
 
-    def get_submission_receipt(self, **kwargs: object):
-        raise FeatureNotImplemented("SubmissionService.get_submission_receipt")
-
-    def list_groups(self, **kwargs: object):
-        raise FeatureNotImplemented("SubmissionService.list_groups")
-
-    def update_group(self, **kwargs: object):
-        raise FeatureNotImplemented("SubmissionService.update_group")
+def _notify_published(sql, actor, offering_id, assignment_id, title) -> None:
+    notify_course(
+        sql,
+        offering_id=offering_id,
+        actor_id=actor.user_id,
+        event_type="ASSIGNMENT_PUBLISHED",
+        title=title,
+        target_type="ASSIGNMENT",
+        target_id=assignment_id,
+        event_key=f"ASSIGNMENT_PUBLISHED:{assignment_id}",
+    )
 
 
 def _aware(value: datetime) -> datetime:

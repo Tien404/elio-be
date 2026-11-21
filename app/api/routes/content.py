@@ -10,6 +10,9 @@ from app.api.dependencies import (
     set_etag,
 )
 from app.api.schemas.content import (
+    Announcement,
+    AnnouncementPage,
+    AnnouncementRequest,
     Resource,
     ResourcePage,
     ResourceRequest,
@@ -18,7 +21,6 @@ from app.api.schemas.content import (
     TopicRequest,
     UpdateResourceRequest,
 )
-from app.services.content_service import ContentService
 
 router = APIRouter(tags=["content"], responses={400: {"description": "Invalid request"}})
 
@@ -29,17 +31,39 @@ PageSize = Annotated[int, Query(ge=1, le=100)]
 
 
 @router.get(
-    "/offerings/{offeringId}/announcements", operation_id="listAnnouncements", status_code=501
+    "/offerings/{offeringId}/announcements",
+    operation_id="listAnnouncements",
+    response_model=AnnouncementPage,
+    summary="Class announcements, newest first.",
 )
-def list_announcements(offeringId: int = Path(ge=1, le=2147483647)):
-    return ContentService().list_announcements(offering_id=offeringId)
+def list_announcements(
+    offeringId: Annotated[int, Path(ge=1, le=2147483647)],
+    actor: ActorDep,
+    service: ContentServiceDep,
+    page: Annotated[int, Query(ge=1)] = 1,
+    pageSize: Annotated[int, Query(ge=1, le=100)] = 25,
+):
+    return service.list_announcements(
+        actor=actor, offering_id=offeringId, page=page, page_size=pageSize
+    )
 
 
 @router.post(
-    "/offerings/{offeringId}/announcements", operation_id="createAnnouncement", status_code=501
+    "/offerings/{offeringId}/announcements",
+    operation_id="createAnnouncement",
+    status_code=201,
+    response_model=Announcement,
+    summary="Professor posts an announcement; class members get it in their inbox.",
 )
-def create_announcement(offeringId: int = Path(ge=1, le=2147483647)):
-    return ContentService().create_announcement(offering_id=offeringId)
+def create_announcement(
+    offeringId: Annotated[int, Path(ge=1, le=2147483647)],
+    body: AnnouncementRequest,
+    actor: MutationActorDep,
+    service: ContentServiceDep,
+):
+    return service.create_announcement(
+        actor=actor, offering_id=offeringId, title=body.title, body=body.body
+    )
 
 
 @router.get(

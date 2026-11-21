@@ -81,3 +81,15 @@ class Offering(ResponseModel):
 
 class OfferingPage(PageMeta):
     items: list[Offering]
+
+
+class AddCoInstructorRequest(RequestModel):
+    email: Email
+
+
+class RemoveMembershipRequest(RequestModel):
+    status: Literal["REMOVED"]
+
+
+class TransferLeadRequest(RequestModel):
+    membershipId: Id = Field(description="An active co-instructor of the class")

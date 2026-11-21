@@ -25,6 +25,7 @@ from app.api.schemas.identity import (
     MeView,
     ResetPasswordRequest,
 )
+from app.api.schemas.reports import AdminClassPage, AuditPage
 
 router = APIRouter(tags=["administration"], responses={400: {"description": "Invalid request"}})
 
@@ -157,14 +158,49 @@ def admin_review_registration(
     )
 
 
-@router.get("/admin/offerings", operation_id="adminListCourses", status_code=501)
-def admin_list_courses(service: AuthServiceDep):
-    return service.admin_list_courses()
+@router.get(
+    "/admin/offerings",
+    operation_id="adminListCourses",
+    response_model=AdminClassPage,
+    summary="Admin: every class with its lead professor and number of students.",
+)
+def admin_list_courses(
+    actor: ActorDep,
+    service: AuthServiceDep,
+    page: Annotated[int, Query(ge=1)] = 1,
+    pageSize: Annotated[int, Query(ge=1, le=100)] = 25,
+    q: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    semester: Annotated[str | None, Query(max_length=20)] = None,
+    status: Literal["DRAFT", "OPEN", "ARCHIVED"] | None = None,
+):
+    return service.admin_list_courses(
+        actor=actor, page=page, page_size=pageSize, q=q, semester=semester, status=status
+    )
 
 
-@router.get("/admin/audit-entries", operation_id="adminListAuditEntries", status_code=501)
-def admin_list_audit_entries(service: AuthServiceDep):
-    return service.admin_list_audit_entries()
+@router.get(
+    "/admin/audit-entries",
+    operation_id="adminListAuditEntries",
+    response_model=AuditPage,
+    summary="Admin: audit log, newest first (filter by person, action or target type).",
+)
+def admin_list_audit_entries(
+    actor: ActorDep,
+    service: AuthServiceDep,
+    page: Annotated[int, Query(ge=1)] = 1,
+    pageSize: Annotated[int, Query(ge=1, le=100)] = 50,
+    actorId: Annotated[int | None, Query(ge=1, le=2147483647)] = None,
+    action: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+    targetType: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+):
+    return service.admin_list_audit_entries(
+        actor=actor,
+        page=page,
+        page_size=pageSize,
+        actor_id=actorId,
+        action=action,
+        target_type=targetType,
+    )
 
 
 @router.post(
