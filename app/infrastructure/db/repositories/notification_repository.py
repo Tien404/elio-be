@@ -46,7 +46,7 @@ class NotificationRepository:
             """SELECT a.announcement_id, a.offering_id, a.title, a.body, a.published_at,
                       a.author_id, u.full_name AS author_name
                FROM announcements AS a JOIN users AS u ON u.user_id = a.author_id
-               WHERE a.announcement_id = %s""",
+               WHERE a.announcement_id = %s AND a.status='PUBLISHED'""",
             announcement_id,
         )
 
@@ -100,13 +100,25 @@ class NotificationRepository:
     def inbox(
         self, recipient_id: int, *, unread_only: bool, offset: int, limit: int
     ) -> tuple[list[dict[str, Any]], int, int]:
-        where = "n.recipient_id = %s" + (" AND n.is_read = 0" if unread_only else "")
+        visible = """n.recipient_id=%s AND EXISTS (
+            SELECT 1 FROM course_memberships m JOIN course_offerings o ON o.offering_id=m.offering_id
+            WHERE m.offering_id=n.offering_id AND m.user_id=n.recipient_id AND m.status='ACTIVE'
+            AND (o.state<>'DRAFT' OR m.course_role<>'STUDENT')) AND (
+            (n.target_type IN ('ASSIGNMENT','QUIZ') AND EXISTS (
+                SELECT 1 FROM activities a WHERE a.activity_id=n.target_id AND a.offering_id=n.offering_id AND a.status='PUBLISHED'))
+            OR (n.target_type='ANNOUNCEMENT' AND EXISTS (
+                SELECT 1 FROM announcements a WHERE a.announcement_id=n.target_id AND a.offering_id=n.offering_id AND a.status='PUBLISHED'))
+            OR (n.target_type='QUIZ_ATTEMPT' AND EXISTS (
+                SELECT 1 FROM quiz_attempts t JOIN activities a ON a.activity_id=t.quiz_id
+                WHERE t.attempt_id=n.target_id AND a.offering_id=n.offering_id AND a.status='PUBLISHED'
+                AND t.student_id=n.recipient_id AND t.released_at IS NOT NULL))
+            OR (n.target_type='OFFERING' AND n.target_id=n.offering_id))"""
+        where = visible + (" AND n.is_read=0" if unread_only else "")
         total = self.sql.scalar(
             f"SELECT COUNT(*) FROM notifications AS n WHERE {where}", recipient_id
         )
         unread = self.sql.scalar(
-            "SELECT COUNT(*) FROM notifications WHERE recipient_id = %s AND is_read = 0",
-            recipient_id,
+            f"SELECT COUNT(*) FROM notifications n WHERE {visible} AND n.is_read=0", recipient_id
         )
         rows = self.sql.all(
             f"""SELECT n.notification_id, n.offering_id, n.event_type, n.message, n.target_type,
@@ -123,7 +135,7 @@ class NotificationRepository:
     def mark_read(self, notification_id: int, recipient_id: int) -> bool:
         """False when the notification is not this person's."""
         found = self.sql.scalar(
-            "SELECT COUNT(*) FROM notifications WHERE notification_id = %s AND recipient_id = %s",
+            "SELECT COUNT(*) FROM notifications WHERE notification_id = %s AND recipient_id = %s AND EXISTS (SELECT 1 FROM course_memberships m WHERE m.offering_id=notifications.offering_id AND m.user_id=notifications.recipient_id AND m.status='ACTIVE')",
             notification_id,
             recipient_id,
         )

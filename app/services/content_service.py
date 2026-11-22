@@ -453,6 +453,15 @@ class ContentService:
             )
             return announcement_view(repo.get_announcement(announcement_id))
 
+    def get_announcement(self, *, actor, announcement_id):
+        with self.database.read_connection() as connection:
+            sql = Sql(connection)
+            row = NotificationRepository(sql).get_announcement(announcement_id)
+            if row is None:
+                raise not_found("Announcement")
+            require_member(CourseRepository(sql), actor, row["offering_id"])
+            return announcement_view(row)
+
     def list_announcements(self, *, actor: Actor, offering_id: int, page: int, page_size: int):
         with self.database.transaction() as connection:
             sql = Sql(connection)

@@ -32,7 +32,7 @@ def test_professor_posts_and_class_is_notified(api):
     assert inbox["unreadCount"] == 2
     newest = inbox["items"][0]
     assert newest["eventType"] == "ANNOUNCEMENT" and newest["targetType"] == "ANNOUNCEMENT"
-    assert newest["message"] == "New announcement in CS1001: Room change"
+    assert newest["message"] == "A course announcement was posted."
     assert newest["targetId"] == posted.json()["id"] and newest["read"] is False
     assert _inbox(c.prof)["items"] == []  # the author is not notified
 
@@ -58,7 +58,7 @@ def test_assignment_published_and_due_date_changed(api):
     assert moved.status_code == 200, moved.text
     first = _inbox(c.student)["items"][0]
     assert first["eventType"] == "DUE_DATE_CHANGED"
-    assert first["message"] == "Due date changed in CS1001: Lab"
+    assert first["message"] == "An assignment deadline changed."
 
 
 def test_grades_released_reach_only_graded_students(api):

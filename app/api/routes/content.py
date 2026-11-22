@@ -188,3 +188,14 @@ def update_topic(
         title=body.title,
         position=body.position,
     )
+
+
+@router.get(
+    "/announcements/{announcementId}", operation_id="getAnnouncement", response_model=Announcement
+)
+def get_announcement(
+    announcementId: Annotated[int, Path(ge=1, le=2147483647)],
+    actor: ActorDep,
+    service: ContentServiceDep,
+):
+    return service.get_announcement(actor=actor, announcement_id=announcementId)

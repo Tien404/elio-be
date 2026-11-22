@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Path, Query, Response
 
 from app.api.dependencies import ActorDep, MutationActorDep, NotificationServiceDep
-from app.api.schemas.reports import NotificationPage
+from app.api.schemas.personal import InboxView
 
 router = APIRouter(tags=["notifications"], responses={400: {"description": "Invalid request"}})
 
@@ -11,7 +11,7 @@ router = APIRouter(tags=["notifications"], responses={400: {"description": "Inva
 @router.get(
     "/me/notifications",
     operation_id="listMyNotifications",
-    response_model=NotificationPage,
+    response_model=InboxView,
     summary="My inbox, newest first, with the unread count.",
 )
 def list_my_notifications(
@@ -20,8 +20,21 @@ def list_my_notifications(
     page: Annotated[int, Query(ge=1)] = 1,
     pageSize: Annotated[int, Query(ge=1, le=100)] = 25,
     unreadOnly: bool = False,
+    offeringId: int | None = None,
+    state: str = "ALL",
+    kind: str | None = None,
+    search: str | None = None,
 ):
-    return service.list_personal(actor=actor, page=page, page_size=pageSize, unread_only=unreadOnly)
+    return service.list_personal(
+        actor=actor,
+        page=page,
+        page_size=pageSize,
+        unread_only=unreadOnly,
+        offering_id=offeringId,
+        state=state,
+        event=kind,
+        search=search,
+    )
 
 
 @router.put(

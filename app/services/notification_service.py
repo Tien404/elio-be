@@ -7,16 +7,21 @@ person who caused the event is never notified (FR-13).
 
 from typing import Any
 
+from app.api.schemas.common import utc_payload
 from app.core.errors import FeatureNotImplemented, not_found
 from app.domain.context import Actor
 from app.infrastructure.db.repositories.notification_repository import NotificationRepository
 from app.infrastructure.db.sql import Sql
 
 MESSAGES = {
-    "ANNOUNCEMENT": "New announcement in {code}: {title}",
-    "ASSIGNMENT_PUBLISHED": "New assignment in {code}: {title}",
-    "DUE_DATE_CHANGED": "Due date changed in {code}: {title}",
-    "GRADES_RELEASED": "Grades released in {code}: {title}",
+    "ANNOUNCEMENT": "A course announcement was posted.",
+    "ASSIGNMENT_PUBLISHED": "An assignment was published.",
+    "DUE_DATE_CHANGED": "An assignment deadline changed.",
+    "GRADES_RELEASED": "An assignment grade was published or updated.",
+    "QUIZ_PUBLISHED": "A quiz was published.",
+    "QUIZ_RESULT_RELEASED": "A quiz result is available.",
+    "INSTRUCTOR_ADDED": "An instructor joined the teaching team.",
+    "LEAD_TRANSFERRED": "The lead instructor changed.",
 }
 
 
@@ -61,18 +66,46 @@ class NotificationService:
         self.database = database
 
     def list_personal(
-        self, *, actor: Actor, page: int, page_size: int, unread_only: bool = False
+        self,
+        *,
+        actor: Actor,
+        page: int,
+        page_size: int,
+        unread_only: bool = False,
+        offering_id=None,
+        state="ALL",
+        event=None,
+        search=None,
     ) -> dict[str, Any]:
         """My inbox, newest first, with the number of unread notifications."""
         with self.database.transaction() as connection:
             rows, total, unread = NotificationRepository(Sql(connection)).inbox(
                 actor.user_id,
                 unread_only=unread_only,
-                offset=(page - 1) * page_size,
-                limit=page_size,
+                offset=0,
+                limit=2147483647,
             )
+        all_items = [notification_view(r) for r in rows]
+        filtered = [
+            item
+            for item in all_items
+            if (offering_id is None or item["offeringId"] == offering_id)
+            and (state == "ALL" or item["status"] == state)
+            and (not event or item["event"] == event)
+            and (not search or search.lower() in item["preview"].lower())
+        ]
+        total = len(filtered)
+        items = filtered[(page - 1) * page_size : page * page_size]
         return {
-            "items": [notification_view(r) for r in rows],
+            "unread": unread,
+            "rows": {
+                "items": items,
+                "page": page,
+                "pageSize": page_size,
+                "totalItems": total,
+                "totalPages": (total + page_size - 1) // page_size,
+            },
+            "items": items,
             "unreadCount": unread,
             "page": page,
             "pageSize": page_size,
@@ -96,10 +129,27 @@ class NotificationService:
 
 
 def notification_view(row: dict[str, Any]) -> dict[str, Any]:
+    event = {
+        "ANNOUNCEMENT": "ANNOUNCEMENT_PUBLISHED",
+        "DUE_DATE_CHANGED": "ASSIGNMENT_DEADLINE_CHANGED",
+        "GRADES_RELEASED": "ASSIGNMENT_GRADE_PUBLISHED",
+    }.get(row["event_type"], row["event_type"])
+    href = (
+        f"/offerings/{row['offering_id']}/announcements"
+        if row["target_type"] == "ANNOUNCEMENT"
+        else f"/results?offeringId={row['offering_id']}"
+        if row["target_type"] in {"GRADE", "SUBMISSION"} or row["event_type"] == "GRADES_RELEASED"
+        else f"/{ {'QUIZ': 'quizzes', 'QUIZ_ATTEMPT': 'quiz-attempts', 'ASSIGNMENT': 'assignments'}.get(row['target_type'], 'offerings') }/{row['target_id']}"
+    )
     return {
+        "event": event,
+        "targetKind": row["target_type"],
+        "preview": MESSAGES.get(row["event_type"], "A course update is available."),
+        "status": "READ" if row["is_read"] else "UNREAD",
+        "href": href,
         "id": row["notification_id"],
         "eventType": row["event_type"],
-        "message": row["message"],
+        "message": MESSAGES.get(row["event_type"], "A course update is available."),
         "offeringId": row["offering_id"],
         "targetType": row["target_type"],
         "targetId": row["target_id"],
@@ -107,5 +157,5 @@ def notification_view(row: dict[str, Any]) -> dict[str, Any]:
         if row["actor_id"]
         else None,
         "read": bool(row["is_read"]),
-        "createdAt": row["created_at"],
+        "createdAt": utc_payload(row["created_at"]),
     }
