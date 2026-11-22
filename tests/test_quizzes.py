@@ -27,6 +27,7 @@ def _quiz(c, **extra):
         "closeAt": _at(120),
         "durationMinutes": 30,
         "totalPoints": 10,
+        "releasePolicy": "IMMEDIATE",
         **extra,
     }
     response = c.prof.post(f"/api/v1/offerings/{c.offering_id}/quizzes", json=body)
@@ -226,17 +227,75 @@ def test_student_takes_quiz_and_is_scored(api):
     assert again["id"] == attempt["id"]
 
     answer = f"/api/v1/quiz-attempts/{attempt['id']}/answers"
-    assert c.student.put(f"{answer}/{choice['id']}", json={"option": 4}).status_code == 422
-    assert c.student.put(f"{answer}/{choice['id']}", json={"option": 1}).status_code == 200
-    assert c.student.put(f"{answer}/{choice['id']}", json={"option": 2}).status_code == 200
-    c.student.put(f"{answer}/{true_false['id']}", json={"option": 2})
+    assert (
+        c.student.put(
+            f"{answer}/{choice['id']}",
+            json={"option": 4},
+            version=c.student.get(
+                (f"{answer}/{choice['id']}").split("/answers")[0].removesuffix("/seal")
+            )
+            .json()
+            .get("version", 1),
+        ).status_code
+        == 422
+    )
+    assert (
+        c.student.put(
+            f"{answer}/{choice['id']}",
+            json={"option": 1},
+            version=c.student.get(
+                (f"{answer}/{choice['id']}").split("/answers")[0].removesuffix("/seal")
+            )
+            .json()
+            .get("version", 1),
+        ).status_code
+        == 200
+    )
+    assert (
+        c.student.put(
+            f"{answer}/{choice['id']}",
+            json={"option": 2},
+            version=c.student.get(
+                (f"{answer}/{choice['id']}").split("/answers")[0].removesuffix("/seal")
+            )
+            .json()
+            .get("version", 1),
+        ).status_code
+        == 200
+    )
+    c.student.put(
+        f"{answer}/{true_false['id']}",
+        json={"option": 2},
+        version=c.student.get(
+            (f"{answer}/{true_false['id']}").split("/answers")[0].removesuffix("/seal")
+        )
+        .json()
+        .get("version", 1),
+    )
     shown = c.student.get(f"/api/v1/quiz-attempts/{attempt['id']}").json()
     assert [q["selectedOption"] for q in shown["questions"]] == [2, 2]
 
-    sealed = c.student.post(f"/api/v1/quiz-attempts/{attempt['id']}/seal")
+    sealed = c.student.post(
+        f"/api/v1/quiz-attempts/{attempt['id']}/seal",
+        version=c.student.get(
+            (f"/api/v1/quiz-attempts/{attempt['id']}/seal")
+            .split("/answers")[0]
+            .removesuffix("/seal")
+        )
+        .json()
+        .get("version", 1),
+    )
     assert sealed.status_code == 200 and sealed.json()["score"] == 5  # only the first is right
     assert sealed.json()["finishedBy"] == "STUDENT"
-    late = c.student.put(f"{answer}/{choice['id']}", json={"option": 1})
+    late = c.student.put(
+        f"{answer}/{choice['id']}",
+        json={"option": 1},
+        version=c.student.get(
+            (f"{answer}/{choice['id']}").split("/answers")[0].removesuffix("/seal")
+        )
+        .json()
+        .get("version", 1),
+    )
     assert late.status_code == 409 and late.json()["code"] == "ATTEMPT_FINISHED"
 
     result = c.student.get(f"/api/v1/quiz-attempts/{attempt['id']}/result").json()
@@ -261,9 +320,26 @@ def test_several_attempts_and_counted_score(api):
         attempt = c.student.post(f"/api/v1/quizzes/{quiz['id']}/attempts").json()
         question = attempt["questions"][0]["id"]
         c.student.put(
-            f"/api/v1/quiz-attempts/{attempt['id']}/answers/{question}", json={"option": option}
+            f"/api/v1/quiz-attempts/{attempt['id']}/answers/{question}",
+            json={"option": option},
+            version=c.student.get(
+                (f"/api/v1/quiz-attempts/{attempt['id']}/answers/{question}")
+                .split("/answers")[0]
+                .removesuffix("/seal")
+            )
+            .json()
+            .get("version", 1),
         )
-        c.student.post(f"/api/v1/quiz-attempts/{attempt['id']}/seal")
+        c.student.post(
+            f"/api/v1/quiz-attempts/{attempt['id']}/seal",
+            version=c.student.get(
+                (f"/api/v1/quiz-attempts/{attempt['id']}/seal")
+                .split("/answers")[0]
+                .removesuffix("/seal")
+            )
+            .json()
+            .get("version", 1),
+        )
     mine = c.student.get(f"/api/v1/quizzes/{quiz['id']}/attempts/me").json()
     assert mine["attemptsUsed"] == 3 and mine["canStart"] is True  # unlimited
     assert [a["score"] for a in mine["attempts"]] == [10, 0, 0]
@@ -275,7 +351,17 @@ def test_time_running_out_submits_the_attempt(api):
     quiz = _published(c, _true_false())
     attempt = c.student.post(f"/api/v1/quizzes/{quiz['id']}/attempts").json()
     question = attempt["questions"][0]["id"]
-    c.student.put(f"/api/v1/quiz-attempts/{attempt['id']}/answers/{question}", json={"option": 1})
+    c.student.put(
+        f"/api/v1/quiz-attempts/{attempt['id']}/answers/{question}",
+        json={"option": 1},
+        version=c.student.get(
+            (f"/api/v1/quiz-attempts/{attempt['id']}/answers/{question}")
+            .split("/answers")[0]
+            .removesuffix("/seal")
+        )
+        .json()
+        .get("version", 1),
+    )
     _run_sql(
         api,
         """UPDATE quiz_attempts SET started_at = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL -40 MINUTE),
@@ -286,7 +372,15 @@ def test_time_running_out_submits_the_attempt(api):
     assert after["status"] == "FINISHED" and after["finishedBy"] == "SYSTEM"
     assert after["score"] == 10  # saved answers still count
     late = c.student.put(
-        f"/api/v1/quiz-attempts/{attempt['id']}/answers/{question}", json={"option": 2}
+        f"/api/v1/quiz-attempts/{attempt['id']}/answers/{question}",
+        json={"option": 2},
+        version=c.student.get(
+            (f"/api/v1/quiz-attempts/{attempt['id']}/answers/{question}")
+            .split("/answers")[0]
+            .removesuffix("/seal")
+        )
+        .json()
+        .get("version", 1),
     )
     assert late.status_code == 409
 
@@ -295,7 +389,16 @@ def test_answers_are_shown_after_the_quiz_closes(api):
     c = class_with_student(api)
     quiz = _published(c, _true_false(), _choice())
     attempt = c.student.post(f"/api/v1/quizzes/{quiz['id']}/attempts").json()
-    c.student.post(f"/api/v1/quiz-attempts/{attempt['id']}/seal")
+    c.student.post(
+        f"/api/v1/quiz-attempts/{attempt['id']}/seal",
+        version=c.student.get(
+            (f"/api/v1/quiz-attempts/{attempt['id']}/seal")
+            .split("/answers")[0]
+            .removesuffix("/seal")
+        )
+        .json()
+        .get("version", 1),
+    )
     _run_sql(
         api,
         """UPDATE quizzes SET open_at = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL -3 HOUR),
@@ -326,5 +429,12 @@ def test_who_can_take_and_see_attempts(api):
     foreign = c.prof.put(
         f"/api/v1/quiz-attempts/{attempt['id']}/answers/{attempt['questions'][0]['id']}",
         json={"option": 1},
+        version=c.prof.get(
+            (f"/api/v1/quiz-attempts/{attempt['id']}/answers/{attempt['questions'][0]['id']}")
+            .split("/answers")[0]
+            .removesuffix("/seal")
+        )
+        .json()
+        .get("version", 1),
     )
     assert foreign.status_code == 404

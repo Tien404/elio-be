@@ -8,13 +8,12 @@ sum of points of correct answers, shown at once. Which answers were right is sho
 after the quiz closes.
 """
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from app.core.errors import (
     ApiError,
-    FeatureNotImplemented,
     conflict,
     not_found,
     version_conflict,
@@ -35,6 +34,7 @@ from app.infrastructure.db.repositories.course_repository import CourseRepositor
 from app.infrastructure.db.repositories.quiz_repository import QuizRepository
 from app.infrastructure.db.sql import Sql
 from app.services.access import is_teacher, require_member, require_student, require_teacher
+from app.services.notification_service import notify_course
 
 CENT = Decimal("0.01")
 QUIZ_FIELDS = [
@@ -47,6 +47,8 @@ QUIZ_FIELDS = [
     "weight",
     "maxAttempts",
     "gradingMethod",
+    "releasePolicy",
+    "mandatory",
 ]
 
 
@@ -110,6 +112,10 @@ def quiz_view(row: dict[str, Any]) -> dict[str, Any]:
         "totalPoints": _num(row["max_score"]),
         "weight": _num(row["weight_pct"]),
         "maxAttempts": row["max_attempts"],
+        "releasePolicy": row["release_policy"],
+        "mandatory": bool(row["is_mandatory"]),
+        "scheduleLocked": bool(row["schedule_locked"]),
+        "serverNow": datetime.now(UTC),
         "gradingMethod": row["grading_method"],
         "questionCount": row["question_count"],
         "version": row["version"],
@@ -132,6 +138,8 @@ def question_view(row: dict[str, Any]) -> dict[str, Any]:
         "explanation": row["explanation"],
         "points": _num(row["points"]),
         "customPoints": bool(row["is_custom_points"]),
+        "sourceQuestionId": row.get("source_question_id"),
+        "sourceVersion": row.get("source_version"),
     }
 
 
@@ -140,12 +148,14 @@ def attempt_summary(row: dict[str, Any]) -> dict[str, Any]:
         "id": row["attempt_id"],
         "quizId": row["quiz_id"],
         "attemptNo": row["attempt_no"],
+        "version": row["version"],
+        "releasedAt": row["released_at"],
         "startedAt": row["started_at"],
         "endsAt": row["ends_at"],
         "submittedAt": row["submitted_at"],
         "finishedBy": row["finalized_by"],
-        "status": "FINISHED" if row["finalized_by"] else "IN_PROGRESS",
-        "score": _num(row["score"]),
+        "status": "FINISHED" if row["submitted_at"] else "IN_PROGRESS",
+        "score": _num(row["score"]) if row["released_at"] else None,
     }
 
 
@@ -164,10 +174,26 @@ def _finish(sql: Sql, row: dict[str, Any], *, by: str, at) -> None:
     """QuizAttempt.finish + QuizAttempt.grade, then store the result."""
     repo = QuizRepository(sql)
     attempt = _load_attempt(repo, row)
-    attempt.finish(at)
-    questions = [question_from_frozen(q) for q in repo.frozen_questions(row["quiz_id"])]
+    if attempt.submitted_at is None:
+        attempt.finish(at)
+    snapshots = repo.frozen_questions(row["quiz_id"])
+    quiz = repo.get_quiz(row["quiz_id"])
+    valid = (
+        bool(snapshots)
+        and sum((Decimal(q["points"]) for q in snapshots), Decimal(0)) == quiz["max_score"]
+        and all(q["correct_key"] in {o["option_key"] for o in q["options"]} for q in snapshots)
+    )
+    if not valid:
+        sql.execute(
+            "UPDATE quiz_attempts SET submitted_at=%s,processing_error='Published question snapshot could not be graded',version=version+1 WHERE attempt_id=%s AND processing_error IS NULL",
+            at,
+            row["attempt_id"],
+        )
+        return
+    questions = [question_from_frozen(q) for q in snapshots]
     score = attempt.grade(questions)
     repo.finish(attempt_id=attempt.attempt_id, by=by, at=at, score=score)
+    release_results(sql, row["quiz_id"])
 
 
 class QuizService:
@@ -181,6 +207,8 @@ class QuizService:
             require_teacher(CourseRepository(sql), actor, offering_id)
             self._check_quiz(sql, offering_id, data)
             quiz_id = QuizRepository(sql).insert_quiz(offering_id=offering_id, data=data)
+            if data.get("questions"):
+                self._replace_selections(sql, quiz_id, offering_id, data["questions"])
             AuditRepository(sql).record(
                 actor_id=actor.user_id,
                 action="QUIZ_CREATED",
@@ -200,7 +228,9 @@ class QuizService:
                 limit=page_size,
             )
             return {
-                "items": [quiz_view(r) for r in rows],
+                "items": [
+                    {**quiz_view(r), "serverNow": AssessmentRepository(sql).db_now()} for r in rows
+                ],
                 "page": page,
                 "pageSize": page_size,
                 "totalItems": total,
@@ -214,14 +244,39 @@ class QuizService:
             row, teacher = self._visible_quiz(sql, actor, quiz_id)
             if teacher:
                 return self._teacher_view(sql, quiz_id)
-            return {**quiz_view(row), "questions": None}
+            return {
+                **quiz_view(row),
+                "questions": None,
+                "serverNow": AssessmentRepository(sql).db_now(),
+            }
 
     def update_quiz(self, *, actor: Actor, quiz_id: int, expected_version: int, changes):
         with self.database.transaction() as connection:
             sql = Sql(connection)
-            repo, row = self._draft_quiz(sql, actor, quiz_id)
+            repo = QuizRepository(sql)
+            row, _ = self._visible_quiz(sql, actor, quiz_id)
+            require_teacher(CourseRepository(sql), actor, row["offering_id"])
+            row = repo.get_quiz(quiz_id, lock=True)
             if row["version"] != expected_version:
                 raise version_conflict(row["version"])
+            if changes.get("status") == "ARCHIVED":
+                if sql.scalar(
+                    "SELECT COUNT(*) FROM quiz_attempts WHERE quiz_id=%s AND finalized_by IS NULL AND ends_at>UTC_TIMESTAMP(6)",
+                    quiz_id,
+                ):
+                    raise conflict("ATTEMPTS_PENDING", "Wait for running attempts to finish.")
+                finish_expired(sql, offering_id=row["offering_id"])
+                sql.execute(
+                    "UPDATE activities SET status='ARCHIVED',version=version+1 WHERE activity_id=%s",
+                    quiz_id,
+                )
+                return self._teacher_view(sql, quiz_id)
+            if row["status"] != "DRAFT" and (
+                row["schedule_locked"] or set(changes) - {"openAt", "closeAt", "durationMinutes"}
+            ):
+                raise conflict(
+                    "QUIZ_SCHEDULE_LOCKED", "Published content and started schedules are locked."
+                )
             view = quiz_view(row)
             data = {k: view[k] for k in QUIZ_FIELDS}
             data["openAt"], data["closeAt"] = row["open_at"], row["close_at"]
@@ -229,7 +284,20 @@ class QuizService:
             data.update(changes)
             self._check_quiz(sql, row["offering_id"], data)
             repo.update_quiz(quiz_id, data)
-            self._spread_points(sql, quiz_id)
+            sql.execute(
+                "UPDATE quizzes SET release_policy=%s WHERE activity_id=%s",
+                data["releasePolicy"],
+                quiz_id,
+            )
+            sql.execute(
+                "UPDATE activities SET is_mandatory=%s WHERE activity_id=%s",
+                data["mandatory"],
+                quiz_id,
+            )
+            if "questions" in changes:
+                self._replace_selections(sql, quiz_id, row["offering_id"], changes["questions"])
+            else:
+                self._spread_points(sql, quiz_id)
             return self._teacher_view(sql, quiz_id)
 
     def add_question(self, *, actor: Actor, quiz_id: int, question: dict[str, Any]):
@@ -280,6 +348,16 @@ class QuizService:
                 target_id=quiz_id,
                 details={"questions": len(questions)},
             )
+            notify_course(
+                sql,
+                offering_id=row["offering_id"],
+                actor_id=actor.user_id,
+                event_type="QUIZ_PUBLISHED",
+                title=row["title"],
+                target_type="QUIZ",
+                target_id=quiz_id,
+                event_key=f"QUIZ_PUBLISHED:{quiz_id}",
+            )
             return self._teacher_view(sql, quiz_id)
 
     # ============================================================== student
@@ -319,11 +397,15 @@ class QuizService:
             row, _ = self._readable_attempt(sql, actor, attempt_id)
             return self._attempt_view(sql, row)
 
-    def save_answer(self, *, actor: Actor, attempt_id: int, question_id: int, option: int):
+    def save_answer(
+        self, *, actor: Actor, attempt_id: int, question_id: int, option: int, expected_version: int
+    ):
         with self.database.transaction() as connection:
             sql = Sql(connection)
             repo = QuizRepository(sql)
             row = self._running_attempt(sql, actor, attempt_id)
+            if row["version"] != expected_version:
+                raise version_conflict(row["version"])
             question = next(
                 (
                     question_from_frozen(q)
@@ -344,13 +426,18 @@ class QuizService:
                 key=str(option),
                 at=AssessmentRepository(sql).db_now(),
             )
-            return {"questionId": question_id, "option": option}
+            sql.execute(
+                "UPDATE quiz_attempts SET version=version+1 WHERE attempt_id=%s", attempt_id
+            )
+            return self._attempt_view(sql, repo.get_attempt(attempt_id))
 
-    def seal(self, *, actor: Actor, attempt_id: int):
+    def seal(self, *, actor: Actor, attempt_id: int, expected_version: int):
         """Submit the attempt; the score is calculated at once."""
         with self.database.transaction() as connection:
             sql = Sql(connection)
             row = self._running_attempt(sql, actor, attempt_id)
+            if row["version"] != expected_version:
+                raise version_conflict(row["version"])
             _finish(sql, row, by="STUDENT", at=AssessmentRepository(sql).db_now())
             return self._attempt_view(sql, QuizRepository(sql).get_attempt(attempt_id))
 
@@ -360,10 +447,40 @@ class QuizService:
         with self.database.transaction() as connection:
             sql = Sql(connection)
             row, teacher = self._readable_attempt(sql, actor, attempt_id)
+            if row["processing_error"]:
+                return {
+                    "attemptId": attempt_id,
+                    "quizId": row["quiz_id"],
+                    "attemptNo": row["attempt_no"],
+                    "state": "GRADING_ERROR",
+                    "releasedAt": None,
+                    "maxScore": float(QuizRepository(sql).get_quiz(row["quiz_id"])["max_score"]),
+                    "answersShown": False,
+                    "questions": [],
+                }
             if row["finalized_by"] is None:
                 raise conflict("ATTEMPT_IN_PROGRESS", "Submit the attempt first.")
             repo = QuizRepository(sql)
             quiz = quiz_from_row(repo.get_quiz(row["quiz_id"]))
+            release_results(sql, row["quiz_id"])
+            row = repo.get_attempt(attempt_id)
+            if row["released_at"] is None:
+                offering = sql.one(
+                    "SELECT o.state FROM course_offerings o JOIN activities a ON a.offering_id=o.offering_id WHERE a.activity_id=%s",
+                    row["quiz_id"],
+                )
+                return {
+                    "attemptId": attempt_id,
+                    "quizId": row["quiz_id"],
+                    "attemptNo": row["attempt_no"],
+                    "state": "WAITING_FOR_RESTORE"
+                    if offering["state"] == "ARCHIVED"
+                    else "WAITING_FOR_CLOSE",
+                    "releasedAt": None,
+                    "maxScore": _num(quiz.max_score),
+                    "answersShown": False,
+                    "questions": [],
+                }
             shown = teacher or AssessmentRepository(sql).db_now() >= quiz.close_at
             attempt = _load_attempt(repo, row)
             questions = []
@@ -386,9 +503,11 @@ class QuizService:
                 "attemptId": attempt_id,
                 "quizId": row["quiz_id"],
                 "attemptNo": row["attempt_no"],
+                "releasedAt": row["released_at"],
                 "score": _num(attempt.score),
                 "maxScore": _num(quiz.max_score),
                 "percentage": _num(Decimal(attempt.score) / quiz.max_score * 100),
+                "state": "PUBLISHED",
                 "answersShown": shown,
                 "questions": questions,
             }
@@ -401,7 +520,11 @@ class QuizService:
             finish_expired(sql, offering_id=row["offering_id"], student_id=actor.user_id)
             attempts = QuizRepository(sql).attempts(quiz_id, actor.user_id)
             quiz = quiz_from_row(row)
-            finished = [Decimal(a["score"]) for a in attempts if a["finalized_by"]]
+            release_results(sql, quiz_id)
+            attempts = QuizRepository(sql).attempts(quiz_id, actor.user_id)
+            finished = [
+                Decimal(a["score"]) for a in attempts if a["finalized_by"] and a["released_at"]
+            ]
             now = AssessmentRepository(sql).db_now()
             running = any(a["finalized_by"] is None for a in attempts)
             return {
@@ -414,6 +537,43 @@ class QuizService:
                 "canStart": quiz.is_open(now) and (running or quiz.can_start(len(attempts))),
                 "attempts": [attempt_summary(a) for a in attempts],
             }
+
+    @staticmethod
+    def _replace_selections(sql, quiz_id, offering_id, selections):
+        from app.services.question_bank_service import bank_question
+
+        if len({s["questionItemId"] for s in selections}) != len(selections):
+            raise ApiError(400, "INVALID_QUESTION", "Choose each question once.")
+        sources = []
+        for selection in selections:
+            source = bank_question(sql, selection["questionItemId"])
+            if source["offeringId"] != offering_id:
+                raise not_found("Question")
+            sources.append((source, selection["points"]))
+        repo = QuizRepository(sql)
+        sql.execute("DELETE FROM quiz_questions WHERE quiz_id=%s", quiz_id)
+        for source, points in sources:
+            data = {
+                key: source[key]
+                for key in (
+                    "type",
+                    "text",
+                    "options",
+                    "correctOption",
+                    "correctAnswer",
+                    "explanation",
+                )
+            }
+            new_id = repo.insert_question(bank_id=repo.bank_id(offering_id), data=data)
+            sql.execute(
+                "UPDATE questions SET source_question_id=%s,source_version=%s WHERE question_id=%s",
+                source.get("sourceQuestionId") or source["id"],
+                source["version"],
+                new_id,
+            )
+            repo.add_to_quiz(quiz_id, new_id)
+            repo.set_points(quiz_id, new_id, points or source["points"], True)
+        QuizService._spread_points(sql, quiz_id)
 
     # ============================================================== helpers
     @staticmethod
@@ -459,6 +619,7 @@ class QuizService:
         repo = QuizRepository(sql)
         return {
             **quiz_view(repo.get_quiz(quiz_id)),
+            "serverNow": AssessmentRepository(sql).db_now(),
             "questions": [question_view(q) for q in repo.questions(quiz_id)],
         }
 
@@ -520,7 +681,7 @@ class QuizService:
         if row["finalized_by"] is None and attempt.has_expired(AssessmentRepository(sql).db_now()):
             _finish(sql, row, by="SYSTEM", at=row["ends_at"])
             row = repo.get_attempt(attempt_id)
-        if row["finalized_by"] is not None:
+        if row["submitted_at"] is not None:
             raise conflict("ATTEMPT_FINISHED", "This attempt has already been submitted.")
         return row
 
@@ -528,8 +689,26 @@ class QuizService:
         """The student's quiz screen: questions without the right answers."""
         repo = QuizRepository(sql)
         attempt = _load_attempt(repo, row)
+        from app.infrastructure.db.repositories.identity_repository import IdentityRepository
+        from app.services.auth_service import account_view
+
         return {
             **attempt_summary(row),
+            "student": account_view(IdentityRepository(sql).get_account(row["student_id"]))[
+                "account"
+            ],
+            "finalization": "ERROR"
+            if row["processing_error"]
+            else "SUCCEEDED"
+            if row["finalized_by"]
+            else "PENDING",
+            "savedAt": {
+                str(answer["quiz_question_id"]): answer["saved_at"]
+                for answer in sql.all(
+                    "SELECT quiz_question_id,saved_at FROM attempt_answers WHERE attempt_id=%s",
+                    row["attempt_id"],
+                )
+            },
             "maxScore": _num(repo.get_quiz(row["quiz_id"])["max_score"]),
             "serverNow": AssessmentRepository(sql).db_now(),
             "questions": [
@@ -549,18 +728,55 @@ class QuizService:
             ],
         }
 
-    # ------------------------------------------- contract operations not used
-    def finalize_expired_attempts(self, **kwargs: object):
-        raise FeatureNotImplemented("QuizService.finalize_expired_attempts")
+    def finalize_expired_attempts(self, *, limit=100):
+        with self.database.read_connection() as connection:
+            ids = Sql(connection).all(
+                """SELECT DISTINCT a.offering_id FROM quiz_attempts t JOIN activities a ON a.activity_id=t.quiz_id
+                WHERE (t.finalized_by IS NULL AND t.ends_at<=UTC_TIMESTAMP(6)) OR (t.finalized_by IS NOT NULL AND t.released_at IS NULL) LIMIT %s""",
+                limit,
+            )
+        for item in ids:
+            with self.database.transaction() as connection:
+                sql = Sql(connection)
+                CourseRepository(sql).get_offering(item["offering_id"], lock=True)
+                finish_expired(sql, offering_id=item["offering_id"])
+                for row in sql.all(
+                    "SELECT activity_id FROM activities WHERE offering_id=%s AND activity_type='QUIZ'",
+                    item["offering_id"],
+                ):
+                    release_results(sql, row["activity_id"])
+        return len(ids)
 
-    def create_question_item(self, **kwargs: object):
-        raise FeatureNotImplemented("QuizService.create_question_item")
 
-    def edit_bank_question(self, **kwargs: object):
-        raise FeatureNotImplemented("QuizService.edit_bank_question")
-
-    def get_question_item(self, **kwargs: object):
-        raise FeatureNotImplemented("QuizService.get_question_item")
-
-    def list_question_items(self, **kwargs: object):
-        raise FeatureNotImplemented("QuizService.list_question_items")
+def release_results(sql, quiz_id):
+    quiz = QuizRepository(sql).get_quiz(quiz_id)
+    if quiz is None:
+        return
+    offering = CourseRepository(sql).get_offering(quiz["offering_id"], lock=True)
+    if offering.state != "OPEN":
+        return
+    if (
+        quiz["release_policy"] == "AFTER_CLOSE"
+        and AssessmentRepository(sql).db_now() < quiz["close_at"]
+    ):
+        return
+    eligible = sql.all(
+        "SELECT attempt_id,student_id FROM quiz_attempts WHERE quiz_id=%s AND finalized_by IS NOT NULL AND score IS NOT NULL AND released_at IS NULL FOR UPDATE",
+        quiz_id,
+    )
+    for attempt in eligible:
+        notify_course(
+            sql,
+            offering_id=quiz["offering_id"],
+            actor_id=None,
+            event_type="QUIZ_RESULT_RELEASED",
+            title=quiz["title"],
+            target_type="QUIZ_ATTEMPT",
+            target_id=attempt["attempt_id"],
+            event_key=f"QUIZ_RESULT_RELEASED:{attempt['attempt_id']}",
+            recipients=[attempt["student_id"]],
+        )
+    sql.execute(
+        "UPDATE quiz_attempts SET released_at=UTC_TIMESTAMP(6) WHERE quiz_id=%s AND finalized_by IS NOT NULL AND score IS NOT NULL AND released_at IS NULL",
+        quiz_id,
+    )

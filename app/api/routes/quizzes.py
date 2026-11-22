@@ -2,19 +2,28 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Response
 
-from app.api.dependencies import ActorDep, MutationActorDep, QuizServiceDep, VersionDep, set_etag
+from app.api.dependencies import (
+    ActorDep,
+    DatabaseDep,
+    MutationActorDep,
+    QuizServiceDep,
+    VersionDep,
+    set_etag,
+)
 from app.api.schemas.quiz import (
     AnswerRequest,
     AttemptView,
+    BankQuestion,
+    BankQuestionPage,
     MyQuizAttempts,
     QuestionRequest,
     QuizPage,
     QuizRequest,
     QuizResult,
     QuizView,
-    SavedAnswer,
     UpdateQuizRequest,
 )
+from app.services.question_bank_service import QuestionBankService
 from app.services.quiz_service import QuizService
 
 router = APIRouter(tags=["quizzes"], responses={400: {"description": "Invalid request"}})
@@ -191,7 +200,7 @@ def get_quiz_attempt(attempt_id: AttemptId, actor: ActorDep, service: QuizServic
 @router.put(
     "/quiz-attempts/{attemptId}/answers/{questionId}",
     operation_id="saveQuizAnswer",
-    response_model=SavedAnswer,
+    response_model=AttemptView,
     summary="Save (or change) one answer while the attempt is running.",
     responses={409: {"description": "ATTEMPT_FINISHED"}, 422: {"description": "INVALID_ANSWER"}},
 )
@@ -199,11 +208,16 @@ def save_quiz_answer(
     attempt_id: AttemptId,
     question_id: QuestionId,
     body: AnswerRequest,
+    version: VersionDep,
     actor: MutationActorDep,
     service: QuizServiceDep,
 ):
     return service.save_answer(
-        actor=actor, attempt_id=attempt_id, question_id=question_id, option=body.option
+        actor=actor,
+        attempt_id=attempt_id,
+        question_id=question_id,
+        option=body.option,
+        expected_version=version,
     )
 
 
@@ -214,8 +228,10 @@ def save_quiz_answer(
     summary="Submit the attempt; it is scored at once.",
     responses={409: {"description": "ATTEMPT_FINISHED"}},
 )
-def seal_quiz_attempt(attempt_id: AttemptId, actor: MutationActorDep, service: QuizServiceDep):
-    return service.seal(actor=actor, attempt_id=attempt_id)
+def seal_quiz_attempt(
+    attempt_id: AttemptId, version: VersionDep, actor: MutationActorDep, service: QuizServiceDep
+):
+    return service.seal(actor=actor, attempt_id=attempt_id, expected_version=version)
 
 
 @router.get(
@@ -228,32 +244,104 @@ def get_quiz_result(attempt_id: AttemptId, actor: ActorDep, service: QuizService
     return service.get_quiz_result(actor=actor, attempt_id=attempt_id)
 
 
-# ------------------------------------------- contract operations not used
+# The bank reuses the main numeric question format.
+
+
 @router.get(
-    "/offerings/{offeringId}/question-bank-items", operation_id="listQuestionItems", status_code=501
+    "/offerings/{offeringId}/question-bank-items",
+    operation_id="listQuestionItems",
+    response_model=BankQuestionPage,
 )
-def list_question_items(offeringId: int = Path(ge=1, le=2147483647)):
-    return QuizService().list_question_items(offering_id=offeringId)
+def list_question_items(
+    offering_id: OfferingId,
+    actor: ActorDep,
+    database: DatabaseDep,
+    q: str | None = None,
+    kind: str | None = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    pageSize: Annotated[int, Query(ge=1, le=100)] = 25,
+):
+    return QuestionBankService(database).list(
+        actor=actor, offering_id=offering_id, search=q, kind=kind, page=page, page_size=pageSize
+    )
 
 
 @router.post(
     "/offerings/{offeringId}/question-bank-items",
     operation_id="createQuestionItem",
-    status_code=501,
+    response_model=BankQuestion,
+    status_code=201,
 )
-def create_question_item(offeringId: int = Path(ge=1, le=2147483647)):
-    return QuizService().create_question_item(offering_id=offeringId)
+def create_question_item(
+    offering_id: OfferingId, body: QuestionRequest, actor: MutationActorDep, database: DatabaseDep
+):
+    return QuestionBankService(database).save(
+        actor=actor, offering_id=offering_id, data=body.model_dump()
+    )
+
+
+QuestionItemId = Annotated[int, Path(alias="questionItemId", ge=1, le=2147483647)]
 
 
 @router.get(
-    "/question-bank-items/{questionItemId}", operation_id="getQuestionItem", status_code=501
+    "/question-bank-items/{questionItemId}",
+    operation_id="getQuestionItem",
+    response_model=BankQuestion,
 )
-def get_question_item(questionItemId: int = Path(ge=1, le=2147483647)):
-    return QuizService().get_question_item(question_item_id=questionItemId)
+def get_question_item(question_id: QuestionItemId, actor: ActorDep, database: DatabaseDep):
+    return QuestionBankService(database).get(actor=actor, question_id=question_id)
 
 
 @router.patch(
-    "/question-bank-items/{questionItemId}", operation_id="updateQuestionItem", status_code=501
+    "/question-bank-items/{questionItemId}",
+    operation_id="updateQuestionItem",
+    response_model=BankQuestion,
 )
-def update_question_item(questionItemId: int = Path(ge=1, le=2147483647)):
-    return QuizService().edit_bank_question(question_item_id=questionItemId)
+def update_question_item(
+    question_id: QuestionItemId,
+    body: QuestionRequest,
+    actor: MutationActorDep,
+    version: VersionDep,
+    database: DatabaseDep,
+):
+    return QuestionBankService(database).save(
+        actor=actor, question_id=question_id, data=body.model_dump(), expected_version=version
+    )
+
+
+@router.get("/quizzes/{quizId}/attempts", operation_id="listQuizAttempts")
+def list_attempts(
+    quiz_id: QuizId,
+    actor: ActorDep,
+    database: DatabaseDep,
+    page: Annotated[int, Query(ge=1)] = 1,
+    pageSize: Annotated[int, Query(ge=1, le=100)] = 25,
+):
+    from app.core.errors import forbidden
+    from app.infrastructure.db.repositories.course_repository import CourseRepository
+    from app.infrastructure.db.repositories.quiz_repository import QuizRepository
+    from app.infrastructure.db.sql import Sql
+    from app.services.access import is_teacher, require_member
+
+    with database.read_connection() as connection:
+        sql = Sql(connection)
+        quiz = QuizRepository(sql).get_quiz(quiz_id)
+        if quiz is None:
+            from app.core.errors import not_found
+
+            raise not_found("Quiz")
+        if not is_teacher(require_member(CourseRepository(sql), actor, quiz["offering_id"])):
+            raise forbidden()
+        rows = sql.all(
+            "SELECT attempt_id FROM quiz_attempts WHERE quiz_id=%s ORDER BY student_id,attempt_no",
+            quiz_id,
+        )
+    ids = rows[(page - 1) * pageSize : page * pageSize]
+    service = QuizService(database)
+    return {
+        "items": [service.get_attempt(actor=actor, attempt_id=r["attempt_id"]) for r in ids],
+        "page": page,
+        "pageSize": pageSize,
+        "totalItems": len(rows),
+        "totalPages": (len(rows) + pageSize - 1) // pageSize,
+    }

@@ -8,14 +8,15 @@ from app.infrastructure.db.sql import Sql
 
 _QUIZ_SELECT = """SELECT a.activity_id, a.offering_id, a.topic_id, a.title, a.max_score,
         a.weight_pct, a.status, a.version, q.open_at, q.close_at, q.duration_min,
-        q.max_attempts, q.grading_method, q.set_total, q.published_at,
+        q.max_attempts, q.grading_method, q.set_total, q.published_at, q.release_policy, a.is_mandatory,
+        EXISTS (SELECT 1 FROM quiz_attempts t WHERE t.quiz_id=a.activity_id) AS schedule_locked,
         (SELECT COUNT(*) FROM quiz_questions AS qq WHERE qq.quiz_id = a.activity_id)
             AS question_count
     FROM activities AS a
     JOIN quizzes AS q ON q.activity_id = a.activity_id"""
 
 _ATTEMPT_COLUMNS = """attempt_id, quiz_id, student_id, attempt_no, started_at, ends_at,
-    submitted_at, finalized_by, score, version"""
+    submitted_at, finalized_by, score, released_at, processing_error, version"""
 
 
 class QuizRepository:
@@ -45,6 +46,14 @@ class QuizRepository:
             data["maxAttempts"],
             data["gradingMethod"],
             data["totalPoints"],
+        )
+        self.sql.execute(
+            "UPDATE quizzes SET release_policy=%s WHERE activity_id=%s",
+            data["releasePolicy"],
+            quiz_id,
+        )
+        self.sql.execute(
+            "UPDATE activities SET is_mandatory=%s WHERE activity_id=%s", data["mandatory"], quiz_id
         )
         return quiz_id
 
@@ -128,7 +137,7 @@ class QuizRepository:
     def questions(self, quiz_id: int) -> list[dict[str, Any]]:
         rows = self.sql.all(
             """SELECT q.question_id, qq.position, qq.points, qq.is_custom_points,
-                      q.question_type, q.question_text, q.tf_correct_answer, q.explanation
+                      q.question_type, q.question_text, q.tf_correct_answer, q.explanation, q.version, q.source_question_id, q.source_version
                FROM quiz_questions AS qq
                JOIN questions AS q ON q.question_id = qq.question_id
                WHERE qq.quiz_id = %s ORDER BY qq.position""",
@@ -229,8 +238,7 @@ class QuizRepository:
             quiz_id,
             position,
         )
-        self.sql.execute("DELETE FROM question_options WHERE question_id = %s", question_id)
-        self.sql.execute("DELETE FROM questions WHERE question_id = %s", question_id)
+        # Bank questions remain reusable after removing a quiz selection.
 
     def touch(self, quiz_id: int) -> None:
         self.sql.execute(
@@ -250,16 +258,17 @@ class QuizRepository:
                 correct = next(str(o["option_no"]) for o in question["options"] if o["is_correct"])
             frozen_id = self.sql.insert(
                 """INSERT INTO quiz_snapshot_questions (quiz_id, source_question_id, position,
-                       question_type, prompt, correct_key, explanation, points)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                       question_type, prompt, correct_key, explanation, points, source_version)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 quiz_id,
-                question["question_id"],
+                question.get("source_question_id") or question["question_id"],
                 question["position"],
                 question["question_type"],
                 question["question_text"],
                 correct,
                 question["explanation"],
                 question["points"],
+                question.get("source_version") or question["version"],
             )
             for key, text in options:
                 self.sql.execute(
@@ -370,12 +379,11 @@ class QuizRepository:
         )
         self.sql.execute(
             """UPDATE quiz_attempts SET submitted_at = %s, finalized_by = %s, score = %s,
-                   released_at = %s, version = version + 1
+                   processing_error=NULL, version = version + 1
                WHERE attempt_id = %s""",
             at,
             by,
             score,
-            at,
             attempt_id,
         )
 
@@ -410,7 +418,7 @@ class QuizRepository:
         scores = self.sql.all(
             """SELECT t.quiz_id, t.score FROM quiz_attempts AS t
                JOIN activities AS a ON a.activity_id = t.quiz_id
-               WHERE a.offering_id = %s AND t.student_id = %s AND t.finalized_by IS NOT NULL
+               WHERE a.offering_id = %s AND t.student_id = %s AND t.finalized_by IS NOT NULL AND t.released_at IS NOT NULL
                ORDER BY t.attempt_no""",
             offering_id,
             student_id,

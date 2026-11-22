@@ -1,17 +1,22 @@
 """Quiz screens: professor's quiz editor, student's attempt screen and result."""
 
-from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from app.api.schemas.common import Id, PageMeta, RequestModel, ResponseModel, Version
+from app.api.schemas.common import Id, Instant, PageMeta, RequestModel, ResponseModel, Version
+from app.api.schemas.identity import AccountSummary
 
 Title = Annotated[str, Field(min_length=1, max_length=200)]
 Points = Annotated[Decimal, Field(gt=0, max_digits=5, decimal_places=2)]
 QuestionKind = Literal["SINGLE_CHOICE", "TRUE_FALSE"]
 Method = Literal["HIGHEST_SCORE", "LATEST_ATTEMPT", "AVERAGE"]
+
+
+class BankSelection(RequestModel):
+    questionItemId: Id
+    points: Points | None = None
 
 
 class QuizRequest(RequestModel):
@@ -23,6 +28,9 @@ class QuizRequest(RequestModel):
     totalPoints: Annotated[Decimal, Field(gt=0, max_digits=6, decimal_places=2)]
     weight: Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)] = Decimal(0)
     maxAttempts: Annotated[int, Field(ge=0, le=100, description="0 = unlimited")] = 1
+    releasePolicy: Literal["AFTER_CLOSE", "IMMEDIATE"] = "AFTER_CLOSE"
+    mandatory: bool = False
+    questions: list[BankSelection] = []
     gradingMethod: Method = "HIGHEST_SCORE"
 
 
@@ -35,6 +43,10 @@ class UpdateQuizRequest(RequestModel):
     totalPoints: Annotated[Decimal, Field(gt=0, max_digits=6, decimal_places=2)] | None = None
     weight: Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)] | None = None
     maxAttempts: Annotated[int, Field(ge=0, le=100)] | None = None
+    releasePolicy: Literal["AFTER_CLOSE", "IMMEDIATE"] | None = None
+    mandatory: bool | None = None
+    questions: list[BankSelection] | None = None
+    status: Literal["ARCHIVED"] | None = None
     gradingMethod: Method | None = None
 
 
@@ -75,6 +87,8 @@ class AnswerRequest(RequestModel):
 
 
 class QuizQuestion(ResponseModel):
+    sourceQuestionId: Id | None
+    sourceVersion: Version | None
     id: Id
     position: int
     type: QuestionKind
@@ -93,12 +107,16 @@ class QuizView(ResponseModel):
     topicId: Id | None
     title: str
     status: Literal["DRAFT", "PUBLISHED", "ARCHIVED"]
-    openAt: datetime
-    closeAt: datetime
+    openAt: Instant
+    closeAt: Instant
     durationMinutes: int
     totalPoints: float
     weight: float
     maxAttempts: int
+    releasePolicy: Literal["AFTER_CLOSE", "IMMEDIATE"]
+    mandatory: bool
+    serverNow: Instant
+    scheduleLocked: bool
     gradingMethod: Method
     questionCount: int
     version: Version
@@ -127,20 +145,25 @@ class AttemptQuestion(ResponseModel):
 
 
 class AttemptSummary(ResponseModel):
+    version: Version
+    releasedAt: Instant | None
     id: Id
     quizId: Id
     attemptNo: int
-    startedAt: datetime
-    endsAt: datetime
-    submittedAt: datetime | None
+    startedAt: Instant
+    endsAt: Instant
+    submittedAt: Instant | None
     finishedBy: Literal["STUDENT", "SYSTEM"] | None
     status: Literal["IN_PROGRESS", "FINISHED"]
     score: float | None
 
 
 class AttemptView(AttemptSummary):
+    student: AccountSummary
+    finalization: Literal["PENDING", "SUCCEEDED", "ERROR"]
+    savedAt: dict[str, Instant]
     maxScore: float
-    serverNow: datetime
+    serverNow: Instant
     questions: list[AttemptQuestion]
 
 
@@ -164,9 +187,13 @@ class QuizResult(ResponseModel):
     attemptId: Id
     quizId: Id
     attemptNo: int
-    score: float
+    state: Literal[
+        "PUBLISHED", "PROCESSING", "WAITING_FOR_CLOSE", "WAITING_FOR_RESTORE", "GRADING_ERROR"
+    ]
+    releasedAt: Instant | None
+    score: float | None = None
     maxScore: float
-    percentage: float
+    percentage: float | None = None
     answersShown: bool = Field(description="Right/wrong is shown after the quiz closes.")
     questions: list[ResultQuestion]
 
@@ -180,3 +207,14 @@ class MyQuizAttempts(ResponseModel):
     maxScore: float
     canStart: bool
     attempts: list[AttemptSummary]
+
+
+class BankQuestion(QuestionRequest):
+    points: float
+    id: Id
+    offeringId: Id
+    version: Version
+
+
+class BankQuestionPage(PageMeta):
+    items: list[BankQuestion]
