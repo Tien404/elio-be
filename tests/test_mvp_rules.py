@@ -73,6 +73,7 @@ def test_submission_checks_database_window(monkeypatch, offset, accepted):
         "cutoff_at": NOW + timedelta(seconds=10),
         "is_group_work": 0,
         "max_group_size": None,
+        "group_formation": "SELF",
     }
     repo = SimpleNamespace(
         get_assignment=lambda *a, **k: row,
@@ -163,6 +164,7 @@ def test_published_assignment_rejects_shorten_and_edit_after_grade(monkeypatch):
         "cutoff_at": NOW + timedelta(days=2),
         "is_group_work": 0,
         "max_group_size": None,
+        "group_formation": "SELF",
     }
     repo = SimpleNamespace(
         get_assignment=lambda *a, **k: row, attachment_ids=lambda id: [], has_grade=lambda id: True
@@ -210,11 +212,16 @@ def test_admin_restore_preserves_private_metadata(monkeypatch):
         "semester": "2026-1",
         "sectionCode": "01",
         "status": "ARCHIVED",
-        "lead": {"status": "ACTIVE"},
+        "lead": {"id": 7, "status": "ACTIVE"},
         "learningInformation": None,
         "joinCode": None,
         "joinEnabled": False,
     }
+    monkeypatch.setattr(
+        courses,
+        "IdentityRepository",
+        lambda sql: SimpleNamespace(get_account=lambda *a, **k: {"status": "ACTIVE"}),
+    )
     service.restore_offering(
         actor=Actor(1, "ADMIN", False), offering_id=1, expected_version=4, reason="Resume"
     )

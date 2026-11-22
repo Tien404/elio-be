@@ -738,6 +738,57 @@
               ],
               "title": "Targettype"
             }
+          },
+          {
+            "name": "offeringId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offeringid"
+            }
+          },
+          {
+            "name": "fromAt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fromat"
+            }
+          },
+          {
+            "name": "toAt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Toat"
+            }
           }
         ],
         "responses": {
@@ -1760,6 +1811,53 @@
         }
       }
     },
+    "/api/v1/announcements/{announcementId}": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Get Announcement",
+        "operationId": "getAnnouncement",
+        "parameters": [
+          {
+            "name": "announcementId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "Announcementid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Announcement"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/courses/{courseId}/registrations": {
       "post": {
         "tags": [
@@ -2407,7 +2505,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GradeItem"
+                  "$ref": "#/components/schemas/GradeRecord"
                 }
               }
             }
@@ -2475,7 +2573,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GradeItem"
+                  "$ref": "#/components/schemas/GradeRecord"
                 }
               }
             }
@@ -2582,6 +2680,48 @@
               "minimum": 1,
               "title": "Offeringid"
             }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "ALL",
+              "title": "State"
+            }
+          },
+          {
+            "name": "activityId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activityid"
+            }
           }
         ],
         "responses": {
@@ -2628,6 +2768,48 @@
               "maximum": 2147483647,
               "minimum": 1,
               "title": "Offeringid"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "ALL",
+              "title": "State"
+            }
+          },
+          {
+            "name": "activityId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activityid"
             }
           }
         ],
@@ -2788,6 +2970,18 @@
               "title": "X-Csrf-Token"
             },
             "description": "Session-bound CSRF token from SessionView.csrfToken. Never logged."
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[1-9][0-9]*\"$",
+              "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT.",
+              "title": "If-Match"
+            },
+            "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT."
           }
         ],
         "requestBody": {
@@ -2840,6 +3034,18 @@
             }
           },
           {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[1-9][0-9]*\"$",
+              "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT.",
+              "title": "If-Match"
+            },
+            "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT."
+          },
+          {
             "name": "X-CSRF-Token",
             "in": "header",
             "required": false,
@@ -2858,6 +3064,16 @@
             "description": "Session-bound CSRF token from SessionView.csrfToken. Never logged."
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishGradeRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2868,6 +3084,86 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/offerings/{offeringId}/gradebook/weights": {
+      "put": {
+        "tags": [
+          "grading"
+        ],
+        "summary": "Update Weights",
+        "operationId": "updateGradebookWeights",
+        "parameters": [
+          {
+            "name": "offeringId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "Offeringid"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Session-bound CSRF token from SessionView.csrfToken. Never logged.",
+              "title": "X-Csrf-Token"
+            },
+            "description": "Session-bound CSRF token from SessionView.csrfToken. Never logged."
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[1-9][0-9]*\"$",
+              "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT.",
+              "title": "If-Match"
+            },
+            "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GradebookWeights"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "400": {
             "description": "Invalid request"
@@ -3589,6 +3885,28 @@
         }
       }
     },
+    "/api/v1/auth/options": {
+      "get": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "Authentication Options",
+        "operationId": "getAuthenticationOptions",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
     "/api/v1/me/notifications": {
       "get": {
         "tags": [
@@ -3629,6 +3947,64 @@
               "default": false,
               "title": "Unreadonly"
             }
+          },
+          {
+            "name": "offeringId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offeringid"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "ALL",
+              "title": "State"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
           }
         ],
         "responses": {
@@ -3637,7 +4013,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NotificationPage"
+                  "$ref": "#/components/schemas/InboxView"
                 }
               }
             }
@@ -4428,6 +4804,55 @@
               "minimum": 1,
               "title": "Offeringid"
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Pagesize"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "ALL",
+              "title": "State"
+            }
           }
         ],
         "responses": {
@@ -4436,7 +4861,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ClassProgress"
+                  "$ref": "#/components/schemas/ProgressView"
                 }
               }
             }
@@ -4470,7 +4895,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Dashboard"
+                  "$ref": "#/components/schemas/PersonalDashboard"
                 }
               }
             }
@@ -4489,6 +4914,61 @@
         "summary": "Assignments due and quizzes open in my classes (default: the next 30 days).",
         "operationId": "getMyCalendar",
         "parameters": [
+          {
+            "name": "offeringId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offeringid"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Pagesize"
+            }
+          },
           {
             "name": "from",
             "in": "query",
@@ -4530,7 +5010,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Calendar"
+                  "$ref": "#/components/schemas/CalendarPage"
                 }
               }
             }
@@ -4558,19 +5038,54 @@
         ],
         "summary": "Student: my progress in each class (x of y done, overall %).",
         "operationId": "getMyProgress",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Pagesize"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MyProgress"
+                  "$ref": "#/components/schemas/ProgressView"
                 }
               }
             }
           },
           "400": {
             "description": "Invalid request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
@@ -5211,6 +5726,72 @@
             }
           }
         }
+      },
+      "get": {
+        "tags": [
+          "quizzes"
+        ],
+        "summary": "List Attempts",
+        "operationId": "listQuizAttempts",
+        "parameters": [
+          {
+            "name": "quizId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "Quizid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Pagesize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/quizzes/{quizId}/attempts/me": {
@@ -5338,6 +5919,18 @@
             }
           },
           {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[1-9][0-9]*\"$",
+              "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT.",
+              "title": "If-Match"
+            },
+            "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT."
+          },
+          {
             "name": "X-CSRF-Token",
             "in": "header",
             "required": false,
@@ -5372,7 +5965,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SavedAnswer"
+                  "$ref": "#/components/schemas/AttemptView"
                 }
               }
             }
@@ -5407,6 +6000,18 @@
               "minimum": 1,
               "title": "Attemptid"
             }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[1-9][0-9]*\"$",
+              "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT.",
+              "title": "If-Match"
+            },
+            "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT."
           },
           {
             "name": "X-CSRF-Token",
@@ -5522,14 +6127,71 @@
               "minimum": 1,
               "title": "Offeringid"
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Pagesize"
+            }
           }
         ],
         "responses": {
-          "501": {
+          "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BankQuestionPage"
+                }
               }
             }
           },
@@ -5565,14 +6227,44 @@
               "minimum": 1,
               "title": "Offeringid"
             }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Session-bound CSRF token from SessionView.csrfToken. Never logged.",
+              "title": "X-Csrf-Token"
+            },
+            "description": "Session-bound CSRF token from SessionView.csrfToken. Never logged."
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "501": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BankQuestion"
+                }
               }
             }
           },
@@ -5613,11 +6305,13 @@
           }
         ],
         "responses": {
-          "501": {
+          "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BankQuestion"
+                }
               }
             }
           },
@@ -5653,14 +6347,56 @@
               "minimum": 1,
               "title": "Questionitemid"
             }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Session-bound CSRF token from SessionView.csrfToken. Never logged.",
+              "title": "X-Csrf-Token"
+            },
+            "description": "Session-bound CSRF token from SessionView.csrfToken. Never logged."
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[1-9][0-9]*\"$",
+              "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT.",
+              "title": "If-Match"
+            },
+            "description": "ETag version you read, e.g. \"3\". Stale -> 412 VERSION_CONFLICT."
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "501": {
+          "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BankQuestion"
+                }
               }
             }
           },
@@ -5765,6 +6501,16 @@
               "maximum": 2147483647,
               "minimum": 1,
               "title": "Assignmentid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{16,128}$",
+              "title": "Idempotency-Key"
             }
           },
           {
@@ -5918,7 +6664,7 @@
         "tags": [
           "submissions"
         ],
-        "summary": "Find a hand-in by its receipt code (R-...) or the requestKey sent with it.",
+        "summary": "Recover the original actor-owned confirmation by its Idempotency-Key.",
         "operationId": "getSubmissionReceipt",
         "parameters": [
           {
@@ -6313,6 +7059,158 @@
           }
         }
       }
+    },
+    "/api/v1/offerings/{offeringId}/teaching-team/candidates": {
+      "get": {
+        "tags": [
+          "teaching"
+        ],
+        "summary": "Instructor Candidates",
+        "operationId": "listInstructorCandidates",
+        "parameters": [
+          {
+            "name": "offeringId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "Offeringid"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Pagesize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/offerings/{offeringId}/audit-entries": {
+      "get": {
+        "tags": [
+          "teaching"
+        ],
+        "summary": "Offering Audit",
+        "operationId": "listOfferingAuditEntries",
+        "parameters": [
+          {
+            "name": "offeringId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "Offeringid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Pagesize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6468,20 +7366,87 @@
         ],
         "title": "ActionResult"
       },
-      "AddCoInstructorRequest": {
+      "ActivityWeight": {
         "properties": {
-          "email": {
+          "id": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Id"
+          },
+          "kind": {
             "type": "string",
-            "maxLength": 254,
-            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
-            "title": "Email"
+            "enum": [
+              "ASSIGNMENT",
+              "QUIZ"
+            ],
+            "title": "Kind"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Weight"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "email"
+          "id",
+          "kind",
+          "weight"
         ],
+        "title": "ActivityWeight"
+      },
+      "AddCoInstructorRequest": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 254,
+                "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "accountId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accountid"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
         "title": "AddCoInstructorRequest"
       },
       "AdminAccountUpdateRequest": {
@@ -6832,6 +7797,14 @@
             ],
             "title": "Maxgroupsize"
           },
+          "groupFormation": {
+            "type": "string",
+            "enum": [
+              "SELF",
+              "INSTRUCTOR"
+            ],
+            "title": "Groupformation"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -6896,6 +7869,7 @@
           "instructions",
           "mode",
           "maxGroupSize",
+          "groupFormation",
           "status",
           "openAt",
           "dueAt",
@@ -6911,6 +7885,31 @@
       },
       "AssignmentGradeRecords": {
         "properties": {
+          "subjects": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Subjects"
+          },
+          "canGrade": {
+            "type": "boolean",
+            "title": "Cangrade"
+          },
+          "serverNow": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Servernow"
+          },
+          "subjectType": {
+            "type": "string",
+            "enum": [
+              "STUDENT",
+              "GROUP"
+            ],
+            "title": "Subjecttype"
+          },
           "assignmentId": {
             "type": "integer",
             "maximum": 2147483647.0,
@@ -6936,6 +7935,10 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "subjects",
+          "canGrade",
+          "serverNow",
+          "subjectType",
           "assignmentId",
           "title",
           "maxScore",
@@ -7034,6 +8037,15 @@
               }
             ],
             "title": "Maxgroupsize"
+          },
+          "groupFormation": {
+            "type": "string",
+            "enum": [
+              "SELF",
+              "INSTRUCTOR"
+            ],
+            "title": "Groupformation",
+            "default": "SELF"
           },
           "status": {
             "type": "string",
@@ -7194,6 +8206,23 @@
       },
       "AttemptSummary": {
         "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "releasedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Releasedat"
+          },
           "id": {
             "type": "integer",
             "maximum": 2147483647.0,
@@ -7270,6 +8299,8 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "version",
+          "releasedAt",
           "id",
           "quizId",
           "attemptNo",
@@ -7284,6 +8315,23 @@
       },
       "AttemptView": {
         "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "releasedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Releasedat"
+          },
           "id": {
             "type": "integer",
             "maximum": 2147483647.0,
@@ -7355,6 +8403,26 @@
               }
             ],
             "title": "Score"
+          },
+          "student": {
+            "$ref": "#/components/schemas/AccountSummary"
+          },
+          "finalization": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUCCEEDED",
+              "ERROR"
+            ],
+            "title": "Finalization"
+          },
+          "savedAt": {
+            "additionalProperties": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "type": "object",
+            "title": "Savedat"
           },
           "maxScore": {
             "type": "number",
@@ -7376,6 +8444,8 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "version",
+          "releasedAt",
           "id",
           "quizId",
           "attemptNo",
@@ -7385,6 +8455,9 @@
           "finishedBy",
           "status",
           "score",
+          "student",
+          "finalization",
+          "savedAt",
           "maxScore",
           "serverNow",
           "questions"
@@ -7487,6 +8560,178 @@
         ],
         "title": "AuditPage"
       },
+      "BankQuestion": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "SINGLE_CHOICE",
+              "TRUE_FALSE"
+            ],
+            "title": "Type"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 8,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "correctOption": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correctoption"
+          },
+          "correctAnswer": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correctanswer"
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          },
+          "id": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Id"
+          },
+          "offeringId": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Offeringid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "text",
+          "points",
+          "id",
+          "offeringId",
+          "version"
+        ],
+        "title": "BankQuestion"
+      },
+      "BankQuestionPage": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "pageSize": {
+            "type": "integer",
+            "title": "Pagesize"
+          },
+          "totalItems": {
+            "type": "integer",
+            "title": "Totalitems"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BankQuestion"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages",
+          "items"
+        ],
+        "title": "BankQuestionPage"
+      },
+      "BankSelection": {
+        "properties": {
+          "questionItemId": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Questionitemid"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "questionItemId"
+        ],
+        "title": "BankSelection"
+      },
       "Body_prepareFile": {
         "properties": {
           "file": {
@@ -7501,56 +8746,11 @@
         ],
         "title": "Body_prepareFile"
       },
-      "Calendar": {
+      "CalendarEvent": {
         "properties": {
-          "from": {
+          "id": {
             "type": "string",
-            "format": "date-time",
-            "title": "From"
-          },
-          "to": {
-            "type": "string",
-            "format": "date-time",
-            "title": "To"
-          },
-          "serverNow": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Servernow"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/CalendarItem"
-            },
-            "type": "array",
-            "title": "Items"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "from",
-          "to",
-          "serverNow",
-          "items"
-        ],
-        "title": "Calendar"
-      },
-      "CalendarItem": {
-        "properties": {
-          "activityId": {
-            "type": "integer",
-            "maximum": 2147483647.0,
-            "minimum": 1.0,
-            "title": "Activityid"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "ASSIGNMENT",
-              "QUIZ"
-            ],
-            "title": "Type"
+            "title": "Id"
           },
           "offeringId": {
             "type": "integer",
@@ -7558,17 +8758,33 @@
             "minimum": 1.0,
             "title": "Offeringid"
           },
-          "courseCode": {
-            "type": "string",
-            "title": "Coursecode"
-          },
-          "classTitle": {
-            "type": "string",
-            "title": "Classtitle"
+          "activityId": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Activityid"
           },
           "title": {
             "type": "string",
             "title": "Title"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ASSIGNMENT_DUE",
+              "QUIZ_OPEN",
+              "QUIZ_CLOSE"
+            ],
+            "title": "Kind"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
           },
           "opensAt": {
             "anyOf": [
@@ -7580,42 +8796,82 @@
                 "type": "null"
               }
             ],
-            "title": "Opensat",
-            "description": "Quizzes: when it opens"
+            "title": "Opensat"
           },
-          "dueAt": {
+          "endsAt": {
             "type": "string",
             "format": "date-time",
-            "title": "Dueat",
-            "description": "Assignment due date or quiz closing time"
+            "title": "Endsat"
           },
-          "done": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Done",
-            "description": "Students: submitted / attempted; null for professors"
+          "status": {
+            "type": "string",
+            "const": "PUBLISHED",
+            "title": "Status"
+          },
+          "targetUri": {
+            "type": "string",
+            "title": "Targeturi"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "activityId",
-          "type",
+          "id",
           "offeringId",
-          "courseCode",
-          "classTitle",
+          "activityId",
           "title",
+          "section",
+          "kind",
+          "at",
           "opensAt",
-          "dueAt",
-          "done"
+          "endsAt",
+          "status",
+          "targetUri"
         ],
-        "title": "CalendarItem"
+        "title": "CalendarEvent"
+      },
+      "CalendarPage": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "pageSize": {
+            "type": "integer",
+            "title": "Pagesize"
+          },
+          "totalItems": {
+            "type": "integer",
+            "title": "Totalitems"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "serverNow": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Servernow"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarEvent"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages",
+          "serverNow",
+          "items"
+        ],
+        "title": "CalendarPage"
       },
       "CatalogCourse": {
         "properties": {
@@ -7708,58 +8964,49 @@
         ],
         "title": "ChangePasswordRequest"
       },
-      "ClassProgress": {
+      "ChecklistItem": {
         "properties": {
-          "offeringId": {
-            "type": "integer",
-            "maximum": 2147483647.0,
-            "minimum": 1.0,
-            "title": "Offeringid"
-          },
-          "courseCode": {
+          "id": {
             "type": "string",
-            "title": "Coursecode"
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "MATERIAL",
+              "ASSIGNMENT",
+              "QUIZ"
+            ],
+            "title": "Kind"
           },
           "title": {
             "type": "string",
             "title": "Title"
           },
-          "students": {
-            "items": {
-              "$ref": "#/components/schemas/StudentProgress"
-            },
-            "type": "array",
-            "title": "Students"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "offeringId",
-          "courseCode",
-          "title",
-          "students"
-        ],
-        "title": "ClassProgress"
-      },
-      "Count": {
-        "properties": {
-          "done": {
-            "type": "integer",
-            "title": "Done"
+          "complete": {
+            "type": "boolean",
+            "title": "Complete"
           },
-          "total": {
-            "type": "integer",
-            "title": "Total"
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "href": {
+            "type": "string",
+            "title": "Href"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "done",
-          "total"
+          "id",
+          "kind",
+          "title",
+          "complete",
+          "reason",
+          "href"
         ],
-        "title": "Count"
+        "title": "ChecklistItem"
       },
       "CreateAccountRequest": {
         "properties": {
@@ -7923,61 +9170,38 @@
         ],
         "title": "CreateOfferingRequest"
       },
-      "Dashboard": {
+      "DashboardAnnouncement": {
         "properties": {
-          "serverNow": {
+          "id": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Id"
+          },
+          "offeringId": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Offeringid"
+          },
+          "title": {
             "type": "string",
-            "format": "date-time",
-            "title": "Servernow"
+            "title": "Title"
           },
-          "role": {
+          "href": {
             "type": "string",
-            "enum": [
-              "STUDENT",
-              "INSTRUCTOR",
-              "ADMIN"
-            ],
-            "title": "Role"
-          },
-          "counts": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "type": "object",
-            "title": "Counts"
-          },
-          "sections": {
-            "items": {
-              "$ref": "#/components/schemas/OfferingSummary"
-            },
-            "type": "array",
-            "title": "Sections"
-          },
-          "assignments": {
-            "items": {
-              "$ref": "#/components/schemas/DashboardAssignment"
-            },
-            "type": "array",
-            "title": "Assignments"
+            "title": "Href"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "serverNow",
-          "role",
-          "counts",
-          "sections",
-          "assignments"
+          "id",
+          "offeringId",
+          "title",
+          "href"
         ],
-        "title": "Dashboard"
+        "title": "DashboardAnnouncement"
       },
       "DashboardAssignment": {
         "properties": {
@@ -8023,6 +9247,57 @@
           "submitted"
         ],
         "title": "DashboardAssignment"
+      },
+      "DashboardTask": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ASSIGNMENT",
+              "QUIZ",
+              "GRADING"
+            ],
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "href": {
+            "type": "string",
+            "title": "Href"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "detail",
+          "href"
+        ],
+        "title": "DashboardTask"
       },
       "EnrollStudentRequest": {
         "properties": {
@@ -8313,6 +9588,10 @@
             ],
             "title": "Submissionid"
           },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
           "gradeId": {
             "anyOf": [
               {
@@ -8325,6 +9604,19 @@
               }
             ],
             "title": "Gradeid"
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groupid"
           }
         },
         "additionalProperties": false,
@@ -8345,17 +9637,137 @@
           "status",
           "submitted",
           "submissionId",
-          "gradeId"
+          "state",
+          "gradeId",
+          "groupId"
         ],
         "title": "GradeItem"
       },
       "GradeRecord": {
         "properties": {
-          "id": {
+          "activityId": {
             "type": "integer",
             "maximum": 2147483647.0,
             "minimum": 1.0,
-            "title": "Id"
+            "title": "Activityid",
+            "description": "Assignment or quiz id (see type)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ASSIGNMENT",
+              "QUIZ"
+            ],
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grade"
+          },
+          "specialMark": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ABSENT",
+                  "BANNED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specialmark"
+          },
+          "specialCode": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  11,
+                  12
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specialcode"
+          },
+          "rangeMin": {
+            "type": "number",
+            "title": "Rangemin"
+          },
+          "rangeMax": {
+            "type": "number",
+            "title": "Rangemax"
+          },
+          "percentage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percentage"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "contribution": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contribution"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "RELEASED"
+            ],
+            "title": "Status"
+          },
+          "submitted": {
+            "type": "boolean",
+            "title": "Submitted"
           },
           "submissionId": {
             "type": "integer",
@@ -8363,11 +9775,59 @@
             "minimum": 1.0,
             "title": "Submissionid"
           },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "gradeId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradeid"
+          },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groupid"
+          },
+          "id": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Id"
+          },
           "assignmentId": {
             "type": "integer",
             "maximum": 2147483647.0,
             "minimum": 1.0,
             "title": "Assignmentid"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishedat"
           },
           "studentIds": {
             "items": {
@@ -8378,17 +9838,29 @@
             "type": "array",
             "title": "Studentids"
           },
-          "status": {
-            "type": "string",
-            "enum": [
-              "DRAFT",
-              "RELEASED"
-            ],
-            "title": "Status"
-          },
           "current": {
             "$ref": "#/components/schemas/GradeRevision",
             "description": "Professor: the draft. Student: the released one"
+          },
+          "draftRevision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GradeRevision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedRevision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GradeRevision"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "released": {
             "anyOf": [
@@ -8423,12 +9895,31 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "id",
-          "submissionId",
-          "assignmentId",
-          "studentIds",
+          "activityId",
+          "type",
+          "title",
+          "weight",
+          "grade",
+          "specialMark",
+          "specialCode",
+          "rangeMin",
+          "rangeMax",
+          "percentage",
+          "feedback",
+          "contribution",
           "status",
+          "submitted",
+          "submissionId",
+          "state",
+          "gradeId",
+          "groupId",
+          "id",
+          "assignmentId",
+          "publishedAt",
+          "studentIds",
           "current",
+          "draftRevision",
+          "publishedRevision",
           "released",
           "revisions",
           "version"
@@ -8541,10 +10032,57 @@
               }
             ],
             "title": "Feedback"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "zeroReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zeroreason"
+          },
+          "expectedSubmissionVersion": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expectedsubmissionversion"
+          },
+          "sourceVersionNo": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceversionno"
           }
         },
         "additionalProperties": false,
         "type": "object",
+        "required": [
+          "expectedSubmissionVersion",
+          "sourceVersionNo"
+        ],
         "title": "GradeRequest",
         "description": "Either a score (0..max) or a special mark, plus optional feedback."
       },
@@ -8553,6 +10091,43 @@
           "revisionNo": {
             "type": "integer",
             "title": "Revisionno"
+          },
+          "sourceVersionNo": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceversionno"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "zeroReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zeroreason"
+          },
+          "isMissingZero": {
+            "type": "boolean",
+            "title": "Ismissingzero"
           },
           "grade": {
             "type": "number",
@@ -8612,6 +10187,10 @@
         "type": "object",
         "required": [
           "revisionNo",
+          "sourceVersionNo",
+          "reason",
+          "zeroReason",
+          "isMissingZero",
           "grade",
           "specialMark",
           "specialCode",
@@ -8678,6 +10257,18 @@
               }
             ],
             "title": "Percentage"
+          },
+          "final": {
+            "type": "boolean",
+            "title": "Final"
+          },
+          "totalWeight": {
+            "type": "number",
+            "title": "Totalweight"
+          },
+          "availableWeight": {
+            "type": "number",
+            "title": "Availableweight"
           }
         },
         "additionalProperties": false,
@@ -8686,12 +10277,28 @@
           "rangeMin",
           "rangeMax",
           "grade",
-          "percentage"
+          "percentage",
+          "final",
+          "totalWeight",
+          "availableWeight"
         ],
         "title": "GradeTotal"
       },
       "Gradebook": {
         "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "writable": {
+            "type": "boolean",
+            "title": "Writable"
+          },
+          "serverNow": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Servernow"
+          },
           "offeringId": {
             "type": "integer",
             "maximum": 2147483647.0,
@@ -8736,6 +10343,9 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "version",
+          "writable",
+          "serverNow",
           "offeringId",
           "courseCode",
           "title",
@@ -8820,6 +10430,23 @@
         ],
         "title": "GradebookRow"
       },
+      "GradebookWeights": {
+        "properties": {
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityWeight"
+            },
+            "type": "array",
+            "title": "Values"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "values"
+        ],
+        "title": "GradebookWeights"
+      },
       "Group": {
         "properties": {
           "id": {
@@ -8853,6 +10480,18 @@
             "type": "integer",
             "title": "Maxsize"
           },
+          "lockedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lockedat"
+          },
           "locked": {
             "type": "boolean",
             "title": "Locked",
@@ -8873,6 +10512,7 @@
           "members",
           "size",
           "maxSize",
+          "lockedAt",
           "locked",
           "version"
         ],
@@ -8936,6 +10576,14 @@
           "studentCode": {
             "type": "string",
             "title": "Studentcode"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "LOCKED"
+            ],
+            "title": "Status"
           }
         },
         "additionalProperties": false,
@@ -8943,7 +10591,8 @@
         "required": [
           "id",
           "displayName",
-          "studentCode"
+          "studentCode",
+          "status"
         ],
         "title": "GroupMember"
       },
@@ -9010,6 +10659,206 @@
           "session"
         ],
         "title": "IdentityView"
+      },
+      "InboxItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Id"
+          },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "ANNOUNCEMENT",
+              "ASSIGNMENT_PUBLISHED",
+              "DUE_DATE_CHANGED",
+              "GRADES_RELEASED",
+              "QUIZ_PUBLISHED",
+              "QUIZ_RESULT_RELEASED",
+              "INSTRUCTOR_ADDED",
+              "LEAD_TRANSFERRED"
+            ],
+            "title": "Eventtype"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "offeringId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offeringid"
+          },
+          "targetType": {
+            "type": "string",
+            "title": "Targettype",
+            "description": "What to open: ANNOUNCEMENT or ASSIGNMENT"
+          },
+          "targetId": {
+            "type": "integer",
+            "title": "Targetid"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Person"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "read": {
+            "type": "boolean",
+            "title": "Read"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "event": {
+            "type": "string",
+            "title": "Event"
+          },
+          "targetKind": {
+            "type": "string",
+            "title": "Targetkind"
+          },
+          "preview": {
+            "type": "string",
+            "title": "Preview"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "READ",
+              "UNREAD"
+            ],
+            "title": "Status"
+          },
+          "href": {
+            "type": "string",
+            "title": "Href"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "eventType",
+          "message",
+          "offeringId",
+          "targetType",
+          "targetId",
+          "actor",
+          "read",
+          "createdAt",
+          "event",
+          "targetKind",
+          "preview",
+          "status",
+          "href"
+        ],
+        "title": "InboxItem"
+      },
+      "InboxRows": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "pageSize": {
+            "type": "integer",
+            "title": "Pagesize"
+          },
+          "totalItems": {
+            "type": "integer",
+            "title": "Totalitems"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InboxItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages",
+          "items"
+        ],
+        "title": "InboxRows"
+      },
+      "InboxView": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "pageSize": {
+            "type": "integer",
+            "title": "Pagesize"
+          },
+          "totalItems": {
+            "type": "integer",
+            "title": "Totalitems"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InboxItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "unread": {
+            "type": "integer",
+            "title": "Unread"
+          },
+          "unreadCount": {
+            "type": "integer",
+            "title": "Unreadcount"
+          },
+          "rows": {
+            "$ref": "#/components/schemas/InboxRows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages",
+          "items",
+          "unread",
+          "unreadCount",
+          "rows"
+        ],
+        "title": "InboxView"
       },
       "JoinCodeRequest": {
         "properties": {
@@ -9191,12 +11040,25 @@
             "title": "Studentid"
           },
           "specialMark": {
-            "type": "string",
-            "enum": [
-              "ABSENT",
-              "BANNED"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ABSENT",
+                  "BANNED"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Specialmark"
+          },
+          "zeroReason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Zeroreason"
           },
           "feedback": {
             "anyOf": [
@@ -9215,67 +11077,9 @@
         "type": "object",
         "required": [
           "studentId",
-          "specialMark"
+          "zeroReason"
         ],
         "title": "MissingWorkRequest"
-      },
-      "MyClassProgress": {
-        "properties": {
-          "student": {
-            "$ref": "#/components/schemas/ProgressStudent"
-          },
-          "materials": {
-            "$ref": "#/components/schemas/Count",
-            "description": "Published materials marked done"
-          },
-          "assignments": {
-            "$ref": "#/components/schemas/Count",
-            "description": "Published assignments submitted"
-          },
-          "quizzes": {
-            "$ref": "#/components/schemas/Count",
-            "description": "Published quizzes with a finished attempt"
-          },
-          "percent": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Percent",
-            "description": "All done / all published; null if nothing yet"
-          },
-          "offeringId": {
-            "type": "integer",
-            "maximum": 2147483647.0,
-            "minimum": 1.0,
-            "title": "Offeringid"
-          },
-          "courseCode": {
-            "type": "string",
-            "title": "Coursecode"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "student",
-          "materials",
-          "assignments",
-          "quizzes",
-          "percent",
-          "offeringId",
-          "courseCode",
-          "title"
-        ],
-        "title": "MyClassProgress"
       },
       "MyGrades": {
         "properties": {
@@ -9293,23 +11097,6 @@
           "items"
         ],
         "title": "MyGrades"
-      },
-      "MyProgress": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/MyClassProgress"
-            },
-            "type": "array",
-            "title": "Items"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "title": "MyProgress"
       },
       "MyQuizAttempts": {
         "properties": {
@@ -9376,127 +11163,6 @@
           "attempts"
         ],
         "title": "MyQuizAttempts"
-      },
-      "Notification": {
-        "properties": {
-          "id": {
-            "type": "integer",
-            "maximum": 2147483647.0,
-            "minimum": 1.0,
-            "title": "Id"
-          },
-          "eventType": {
-            "type": "string",
-            "enum": [
-              "ANNOUNCEMENT",
-              "ASSIGNMENT_PUBLISHED",
-              "DUE_DATE_CHANGED",
-              "GRADES_RELEASED"
-            ],
-            "title": "Eventtype"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message"
-          },
-          "offeringId": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 2147483647.0,
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Offeringid"
-          },
-          "targetType": {
-            "type": "string",
-            "title": "Targettype",
-            "description": "What to open: ANNOUNCEMENT or ASSIGNMENT"
-          },
-          "targetId": {
-            "type": "integer",
-            "title": "Targetid"
-          },
-          "actor": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Person"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "read": {
-            "type": "boolean",
-            "title": "Read"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Createdat"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "eventType",
-          "message",
-          "offeringId",
-          "targetType",
-          "targetId",
-          "actor",
-          "read",
-          "createdAt"
-        ],
-        "title": "Notification"
-      },
-      "NotificationPage": {
-        "properties": {
-          "page": {
-            "type": "integer",
-            "title": "Page"
-          },
-          "pageSize": {
-            "type": "integer",
-            "title": "Pagesize"
-          },
-          "totalItems": {
-            "type": "integer",
-            "title": "Totalitems"
-          },
-          "totalPages": {
-            "type": "integer",
-            "title": "Totalpages"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/Notification"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "unreadCount": {
-            "type": "integer",
-            "title": "Unreadcount"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "page",
-          "pageSize",
-          "totalItems",
-          "totalPages",
-          "items",
-          "unreadCount"
-        ],
-        "title": "NotificationPage"
       },
       "Offering": {
         "properties": {
@@ -9675,72 +11341,6 @@
         ],
         "title": "OfferingPage"
       },
-      "OfferingSummary": {
-        "properties": {
-          "id": {
-            "type": "integer",
-            "maximum": 2147483647.0,
-            "minimum": 1.0,
-            "title": "Id"
-          },
-          "courseId": {
-            "type": "integer",
-            "maximum": 2147483647.0,
-            "minimum": 1.0,
-            "title": "Courseid"
-          },
-          "courseCode": {
-            "type": "string",
-            "title": "Coursecode"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "semester": {
-            "type": "string",
-            "title": "Semester"
-          },
-          "sectionCode": {
-            "type": "string",
-            "title": "Sectioncode"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "DRAFT",
-              "OPEN",
-              "ARCHIVED"
-            ],
-            "title": "Status"
-          },
-          "leadMembershipId": {
-            "type": "integer",
-            "maximum": 2147483647.0,
-            "minimum": 1.0,
-            "title": "Leadmembershipid"
-          },
-          "version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Version"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "courseId",
-          "courseCode",
-          "title",
-          "semester",
-          "sectionCode",
-          "status",
-          "leadMembershipId",
-          "version"
-        ],
-        "title": "OfferingSummary"
-      },
       "Person": {
         "properties": {
           "id": {
@@ -9762,31 +11362,246 @@
         ],
         "title": "Person"
       },
-      "ProgressStudent": {
+      "PersonalDashboard": {
         "properties": {
-          "id": {
+          "serverNow": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Servernow"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "STUDENT",
+              "INSTRUCTOR",
+              "ADMIN"
+            ],
+            "title": "Role"
+          },
+          "counts": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Counts"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/Offering"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardAssignment"
+            },
+            "type": "array",
+            "title": "Assignments"
+          },
+          "progress": {
+            "items": {
+              "$ref": "#/components/schemas/ProgressRow"
+            },
+            "type": "array",
+            "title": "Progress"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardTask"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "announcements": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardAnnouncement"
+            },
+            "type": "array",
+            "title": "Announcements"
+          },
+          "unread": {
             "type": "integer",
-            "maximum": 2147483647.0,
-            "minimum": 1.0,
-            "title": "Id"
+            "title": "Unread"
           },
-          "displayName": {
-            "type": "string",
-            "title": "Displayname"
-          },
-          "studentCode": {
-            "type": "string",
-            "title": "Studentcode"
+          "upcoming": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarEvent"
+            },
+            "type": "array",
+            "title": "Upcoming"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "id",
-          "displayName",
-          "studentCode"
+          "serverNow",
+          "role",
+          "counts",
+          "sections",
+          "assignments",
+          "progress",
+          "tasks",
+          "announcements",
+          "unread",
+          "upcoming"
         ],
-        "title": "ProgressStudent"
+        "title": "PersonalDashboard"
+      },
+      "ProgressPage": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "pageSize": {
+            "type": "integer",
+            "title": "Pagesize"
+          },
+          "totalItems": {
+            "type": "integer",
+            "title": "Totalitems"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProgressRow"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages",
+          "items"
+        ],
+        "title": "ProgressPage"
+      },
+      "ProgressRow": {
+        "properties": {
+          "offeringId": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Offeringid"
+          },
+          "membershipId": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Membershipid"
+          },
+          "studentId": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Studentid"
+          },
+          "displayName": {
+            "type": "string",
+            "title": "Displayname"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "NO_MANDATORY_ACTIVITIES"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "offeringId",
+          "membershipId",
+          "studentId",
+          "displayName",
+          "completed",
+          "total",
+          "percent",
+          "notice",
+          "items"
+        ],
+        "title": "ProgressRow"
+      },
+      "ProgressView": {
+        "properties": {
+          "teacher": {
+            "type": "boolean",
+            "title": "Teacher"
+          },
+          "rows": {
+            "$ref": "#/components/schemas/ProgressPage"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "teacher",
+          "rows"
+        ],
+        "title": "ProgressView"
+      },
+      "PublishGradeRequest": {
+        "properties": {
+          "revisionNo": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revisionno"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revisionNo"
+        ],
+        "title": "PublishGradeRequest"
       },
       "QuestionRequest": {
         "properties": {
@@ -9922,6 +11737,31 @@
       },
       "QuizQuestion": {
         "properties": {
+          "sourceQuestionId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcequestionid"
+          },
+          "sourceVersion": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceversion"
+          },
           "id": {
             "type": "integer",
             "maximum": 2147483647.0,
@@ -10003,6 +11843,8 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "sourceQuestionId",
+          "sourceVersion",
           "id",
           "position",
           "type",
@@ -10087,6 +11929,28 @@
             "description": "0 = unlimited",
             "default": 1
           },
+          "releasePolicy": {
+            "type": "string",
+            "enum": [
+              "AFTER_CLOSE",
+              "IMMEDIATE"
+            ],
+            "title": "Releasepolicy",
+            "default": "AFTER_CLOSE"
+          },
+          "mandatory": {
+            "type": "boolean",
+            "title": "Mandatory",
+            "default": false
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/BankSelection"
+            },
+            "type": "array",
+            "title": "Questions",
+            "default": []
+          },
           "gradingMethod": {
             "type": "string",
             "enum": [
@@ -10127,8 +11991,38 @@
             "type": "integer",
             "title": "Attemptno"
           },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PUBLISHED",
+              "PROCESSING",
+              "WAITING_FOR_CLOSE",
+              "WAITING_FOR_RESTORE",
+              "GRADING_ERROR"
+            ],
+            "title": "State"
+          },
+          "releasedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Releasedat"
+          },
           "score": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Score"
           },
           "maxScore": {
@@ -10136,7 +12030,14 @@
             "title": "Maxscore"
           },
           "percentage": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Percentage"
           },
           "answersShown": {
@@ -10158,9 +12059,9 @@
           "attemptId",
           "quizId",
           "attemptNo",
-          "score",
+          "state",
+          "releasedAt",
           "maxScore",
-          "percentage",
           "answersShown",
           "questions"
         ],
@@ -10232,6 +12133,27 @@
             "type": "integer",
             "title": "Maxattempts"
           },
+          "releasePolicy": {
+            "type": "string",
+            "enum": [
+              "AFTER_CLOSE",
+              "IMMEDIATE"
+            ],
+            "title": "Releasepolicy"
+          },
+          "mandatory": {
+            "type": "boolean",
+            "title": "Mandatory"
+          },
+          "serverNow": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Servernow"
+          },
+          "scheduleLocked": {
+            "type": "boolean",
+            "title": "Schedulelocked"
+          },
           "gradingMethod": {
             "type": "string",
             "enum": [
@@ -10280,6 +12202,10 @@
           "totalPoints",
           "weight",
           "maxAttempts",
+          "releasePolicy",
+          "mandatory",
+          "serverNow",
+          "scheduleLocked",
           "gradingMethod",
           "questionCount",
           "version"
@@ -10391,12 +12317,19 @@
             "type": "string",
             "const": "REMOVED",
             "title": "Status"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "status"
+          "status",
+          "reason"
         ],
         "title": "RemoveMembershipRequest"
       },
@@ -10784,27 +12717,6 @@
         ],
         "title": "Reviser"
       },
-      "SavedAnswer": {
-        "properties": {
-          "questionId": {
-            "type": "integer",
-            "maximum": 2147483647.0,
-            "minimum": 1.0,
-            "title": "Questionid"
-          },
-          "option": {
-            "type": "integer",
-            "title": "Option"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "questionId",
-          "option"
-        ],
-        "title": "SavedAnswer"
-      },
       "SessionView": {
         "properties": {
           "account": {
@@ -10898,47 +12810,6 @@
           "items"
         ],
         "title": "StudentList"
-      },
-      "StudentProgress": {
-        "properties": {
-          "student": {
-            "$ref": "#/components/schemas/ProgressStudent"
-          },
-          "materials": {
-            "$ref": "#/components/schemas/Count",
-            "description": "Published materials marked done"
-          },
-          "assignments": {
-            "$ref": "#/components/schemas/Count",
-            "description": "Published assignments submitted"
-          },
-          "quizzes": {
-            "$ref": "#/components/schemas/Count",
-            "description": "Published quizzes with a finished attempt"
-          },
-          "percent": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Percent",
-            "description": "All done / all published; null if nothing yet"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "student",
-          "materials",
-          "assignments",
-          "quizzes",
-          "percent"
-        ],
-        "title": "StudentProgress"
       },
       "StudentSummary": {
         "properties": {
@@ -11072,7 +12943,15 @@
             "title": "Recipients"
           },
           "grade": {
-            "type": "null",
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Grade"
           },
           "revisions": {
@@ -11139,6 +13018,19 @@
             "minimum": 0.0,
             "title": "Expectedversion"
           },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groupid"
+          },
           "fileIds": {
             "items": {
               "type": "integer",
@@ -11149,21 +13041,6 @@
             "maxItems": 5,
             "minItems": 1,
             "title": "Fileids"
-          },
-          "requestKey": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 128,
-                "minLength": 16,
-                "pattern": "^[A-Za-z0-9._:-]+$",
-                "description": "Optional client key; sending it again returns the same hand-in"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Requestkey"
           }
         },
         "additionalProperties": false,
@@ -11341,12 +13218,19 @@
             "minimum": 1.0,
             "title": "Membershipid",
             "description": "An active co-instructor of the class"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "membershipId"
+          "membershipId",
+          "reason"
         ],
         "title": "TransferLeadRequest"
       },
@@ -11416,6 +13300,21 @@
               }
             ],
             "title": "Maxgroupsize"
+          },
+          "groupFormation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "SELF",
+                  "INSTRUCTOR"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groupformation"
           },
           "status": {
             "anyOf": [
@@ -11796,6 +13695,58 @@
               }
             ],
             "title": "Maxattempts"
+          },
+          "releasePolicy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "AFTER_CLOSE",
+                  "IMMEDIATE"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Releasepolicy"
+          },
+          "mandatory": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mandatory"
+          },
+          "questions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/BankSelection"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Questions"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "ARCHIVED"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
           },
           "gradingMethod": {
             "anyOf": [

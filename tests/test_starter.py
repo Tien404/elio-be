@@ -44,20 +44,22 @@ def test_unknown_route_uses_problem_without_echoing_input(client):
     assert "never-echo-this" not in response.text
 
 
-def test_unimplemented_routes_return_501(client):
-    paths = client.get("/openapi.json").json()["paths"]
-    for operation in CATALOG:
-        method, template = operation["method"], operation["path"]
-        if "501" not in paths[template][method.lower()]["responses"]:
-            continue
-        path = re.sub(
-            r"\{([^}]+)\}",
-            lambda match: "demo_request_key_0001" if match[1] == "requestKey" else "1",
-            template,
-        )
-        response = client.request(method, path)
-        assert response.status_code == 501, f"{method} {path}: {response.text}"
-        assert response.json()["code"] == "NOT_IMPLEMENTED", f"{method} {path}"
+def test_portable_contract_matches_live_and_has_no_501(client):
+    schema = client.get("/openapi.json").json()
+    assert schema == json.loads((CONTRACTS / "openapi.json").read_text())
+    operations = {
+        (path, method.upper())
+        for path, methods in schema["paths"].items()
+        if path.startswith("/api/v1/")
+        for method, op in methods.items()
+        if method in {"get", "post", "put", "patch", "delete"}
+    }
+    assert operations == {(op["path"], op["method"]) for op in CATALOG}
+    assert all(
+        "501" not in op.get("responses", {})
+        for methods in schema["paths"].values()
+        for op in methods.values()
+    )
 
 
 def test_openapi_is_generated_from_route_declarations(client):
@@ -90,7 +92,10 @@ def test_openapi_is_generated_from_route_declarations(client):
 
 @pytest.mark.parametrize("value", ["0", "-1", "not-an-id", "2147483648"])
 def test_invalid_path_id_uses_safe_validation_error(client, value):
-    # a placeholder route without login, so only path validation applies
+    from app.api.dependencies import current_actor
+    from app.domain.context import Actor
+
+    client.app.dependency_overrides[current_actor] = lambda: Actor(1, "INSTRUCTOR", False)
     response = client.get(f"/api/v1/question-bank-items/{value}")
     assert response.status_code == 400
     assert response.json()["code"] == "INVALID_REQUEST"
