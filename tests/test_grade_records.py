@@ -32,10 +32,18 @@ def test_grade_list_record_and_history(api):
     assert record["revisions"][0]["revisedBy"]["displayName"] == "Prof"
     assert c.student.get(url).status_code == 404  # nothing released yet
 
-    revised = c.prof.post(f"{url}/revisions", json={"score": 9})
+    revised = c.prof.post(
+        f"{url}/revisions",
+        json={"score": 9, "expectedSubmissionVersion": 1, "sourceVersionNo": 1},
+        version=record["version"],
+    )
     assert revised.status_code == 201, revised.text
     assert revised.json()["current"]["grade"] == 9 and len(revised.json()["revisions"]) == 3
-    too_high = c.prof.post(f"{url}/revisions", json={"score": 11})
+    too_high = c.prof.post(
+        f"{url}/revisions",
+        json={"score": 11, "expectedSubmissionVersion": 1, "sourceVersionNo": 1},
+        version=revised.json()["version"],
+    )
     assert too_high.status_code == 422
 
 
@@ -43,16 +51,27 @@ def test_release_one_grade(api):
     c = class_with_student(api)
     _enroll_outsider(c)
     box = _box(c)
+    submissions = []
     for user, score in ((c.student, 6), (c.outsider, 9)):
         file_id = _upload(user, c, box["id"]).json()["id"]
         submission = user.post(
             f"/api/v1/assignments/{box['id']}/submissions",
             json={"expectedVersion": 0, "fileIds": [file_id]},
         ).json()
-        _grade(c.prof, submission["id"], score=score)
+        submissions.append((submission["id"], score))
+    for sid, score in submissions:
+        _grade(c.prof, sid, score=score)
 
     stu_grade = _records(c, box)["Stu"]["gradeId"]
-    released = c.prof.put(f"/api/v1/grade-records/{stu_grade}/publication")
+    released = c.prof.put(
+        f"/api/v1/grade-records/{stu_grade}/publication",
+        json={
+            "revisionNo": c.prof.get(f"/api/v1/grade-records/{stu_grade}").json()["draftRevision"][
+                "revisionNo"
+            ]
+        },
+        version=c.prof.get(f"/api/v1/grade-records/{stu_grade}").json()["version"],
+    )
     assert released.status_code == 200, released.text
     assert released.json()["status"] == "RELEASED" and released.json()["released"]["grade"] == 6
 
@@ -67,36 +86,27 @@ def test_release_one_grade(api):
     own = c.student.get(f"/api/v1/grade-records/{stu_grade}").json()
     assert own["current"]["grade"] == 6 and own["revisions"] is None  # no history for students
     assert c.outsider.get(f"/api/v1/grade-records/{stu_grade}").status_code == 404
-    assert c.student.put(f"/api/v1/grade-records/{stu_grade}/publication").status_code == 403
+    assert (
+        c.student.put(
+            f"/api/v1/grade-records/{stu_grade}/publication", json={"revisionNo": 1}, version=1
+        ).status_code
+        == 403
+    )
 
-    c.prof.put(f"/api/v1/grade-records/{stu_grade}/publication")  # again: nothing new
+    c.prof.put(
+        f"/api/v1/grade-records/{stu_grade}/publication",
+        json={
+            "revisionNo": c.prof.get(f"/api/v1/grade-records/{stu_grade}").json()["draftRevision"][
+                "revisionNo"
+            ]
+        },
+        version=c.prof.get(f"/api/v1/grade-records/{stu_grade}").json()["version"],
+    )  # again: nothing new
     events = [n["eventType"] for n in c.student.get("/api/v1/me/notifications").json()["items"]]
     assert events.count("GRADES_RELEASED") == 1
 
 
 def test_receipt_lookup_and_repeat_safe_hand_in(api):
-    c = class_with_student(api)
-    _enroll_outsider(c)
-    box = _box(c)
-    other = _box(c, title="Homework 2")
-    key = "my-tab-1234567890"
-    file_id = _upload(c.student, c, box["id"]).json()["id"]
-    body = {"expectedVersion": 0, "fileIds": [file_id], "requestKey": key}
-    first = c.student.post(f"/api/v1/assignments/{box['id']}/submissions", json=body)
-    assert first.status_code == 201, first.text
-    receipt = first.json()["currentVersion"]["receiptCode"]
+    from tests.test_main_adaptation import test_original_receipt_replay_and_changed_payload
 
-    # the response got lost: sending the same request again gives the same hand-in
-    again = c.student.post(f"/api/v1/assignments/{box['id']}/submissions", json=body)
-    assert again.json()["id"] == first.json()["id"] and again.json()["version"] == 1
-    elsewhere = c.student.post(f"/api/v1/assignments/{other['id']}/submissions", json=body)
-    assert elsewhere.status_code == 409 and elsewhere.json()["code"] == "REQUEST_KEY_USED"
-
-    base = f"/api/v1/assignments/{box['id']}/submission-receipts"
-    for lookup in (receipt, key):
-        found = c.student.get(f"{base}/{lookup}")
-        assert found.status_code == 200, found.text
-        assert found.json()["versionNo"] == 1 and found.json()["fileIds"] == [file_id]
-    assert c.prof.get(f"{base}/{receipt}").status_code == 200
-    assert c.outsider.get(f"{base}/{receipt}").status_code == 404  # not theirs
-    assert c.student.get(f"{base}/R-0000000000000000").status_code == 404
+    test_original_receipt_replay_and_changed_payload(api)

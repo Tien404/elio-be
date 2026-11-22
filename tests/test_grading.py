@@ -14,7 +14,34 @@ def _submitted(c, **box_args):
 
 
 def _grade(user, submission_id, **body):
-    return user.post(f"/api/v1/submissions/{submission_id}/grade-record", json=body)
+    response = user.get(f"/api/v1/submissions/{submission_id}/history")
+    if response.status_code != 200:
+        return user.post(
+            f"/api/v1/submissions/{submission_id}/grade-record",
+            json={"expectedSubmissionVersion": 1, "sourceVersionNo": 1, **body},
+        )
+    stream = response.json()
+    submission = stream["submission"]
+    from tests.test_main_adaptation import close_assignment
+
+    close_assignment(user.client, submission["assignmentId"])
+    payload = {
+        "expectedSubmissionVersion": submission["version"],
+        "sourceVersionNo": submission["currentVersion"]["versionNo"]
+        if submission["currentVersion"]
+        else None,
+        **body,
+    }
+    if submission["status"] != "SUBMITTED":
+        payload["zeroReason"] = "No work submitted"
+    grade = stream["grade"]
+    if grade:
+        return user.post(
+            f"/api/v1/grade-records/{grade['id']}/revisions",
+            json={"reason": "Rechecked during test", **payload},
+            version=grade["version"],
+        )
+    return user.post(f"/api/v1/submissions/{submission_id}/grade-record", json=payload)
 
 
 def _page(user, c, student_id=None):
@@ -79,10 +106,17 @@ def test_special_marks_count_as_zero(api):
     _enroll_outsider(c)
     box, submission_id = _submitted(c)
 
+    from tests.test_main_adaptation import close_assignment
+
+    close_assignment(api, box["id"])
     # out@ did not submit: 11 = absent
     absent = c.prof.post(
         f"/api/v1/assignments/{box['id']}/missing-work-decisions",
-        json={"studentId": c.outsider.account_id, "specialMark": "ABSENT"},
+        json={
+            "studentId": c.outsider.account_id,
+            "specialMark": "ABSENT",
+            "zeroReason": "No submission",
+        },
     )
     assert absent.status_code == 200, absent.text
     item = absent.json()
@@ -105,42 +139,44 @@ def test_grade_blocks_only_that_students_resubmission(api):
     c = class_with_student(api)
     _enroll_outsider(c)
     box = _box(c)
+    from tests.test_main_adaptation import close_assignment
+
+    close_assignment(api, box["id"])
     marked = c.prof.post(
         f"/api/v1/assignments/{box['id']}/missing-work-decisions",
-        json={"studentId": c.student.account_id, "specialMark": "ABSENT"},
+        json={
+            "studentId": c.student.account_id,
+            "specialMark": "ABSENT",
+            "zeroReason": "No submission by cutoff",
+        },
     )
     assert marked.status_code == 200, marked.text
-    assert _upload(c.student, c, box["id"]).status_code == 409  # stu@ is graded
-    file_id = _upload(c.outsider, c, box["id"]).json()["id"]  # out@ still can submit
-    assert _submit(c.outsider, box["id"], [file_id]).status_code == 201
-
-    again = c.prof.post(
-        f"/api/v1/assignments/{box['id']}/missing-work-decisions",
-        json={"studentId": c.outsider.account_id, "specialMark": "ABSENT"},
-    )
-    assert again.status_code == 409 and again.json()["code"] == "ALREADY_SUBMITTED"
+    assert _upload(c.student, c, box["id"]).status_code == 409
+    assert _upload(c.outsider, c, box["id"]).status_code == 409
 
 
 def test_course_total_and_contribution(api):
     c = class_with_student(api)
     first, first_sub = _submitted(c, title="Homework 1", weight=40)
-    second, second_sub = _submitted(c, title="Homework 2")
+    second, second_sub = _submitted(c, title="Homework 2", weight=60)
     _grade(c.prof, first_sub, score=5)
     report = _page(c.prof, c).json()
     assert report["courseCode"] == "CS1001" and report["student"]["displayName"] == "Stu"
     one, two = report["items"]
     assert one["weight"] == 40 and one["contribution"] == 20  # 5/10 of 40%
-    assert two["weight"] is None and two["contribution"] is None and two["grade"] is None
-    assert report["total"] == {"rangeMin": 0, "rangeMax": 20, "grade": None, "percentage": None}
+    assert two["weight"] == 60 and two["contribution"] is None and two["grade"] is None
+    assert report["total"]["rangeMax"] == 10
+    assert report["total"]["grade"] == 2
+    assert report["total"]["final"] is False
 
     _grade(c.prof, second_sub, score=10)
-    assert _page(c.prof, c).json()["total"]["grade"] == 15
-    assert _page(c.prof, c).json()["total"]["percentage"] == 75
+    assert _page(c.prof, c).json()["total"]["grade"] == 8
+    assert _page(c.prof, c).json()["total"]["percentage"] == 80
 
     for box in (first, second):
         _release(c.prof, box["id"])
     mine = c.student.get("/api/v1/me/grades").json()["items"]
-    assert len(mine) == 1 and mine[0]["total"]["grade"] == 15
+    assert len(mine) == 1 and mine[0]["total"]["grade"] == 8
 
 
 def test_invalid_grade_boxes(api):

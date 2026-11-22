@@ -336,8 +336,8 @@ class Grade:
             if special_mark == SpecialMark.ABSENT and submitted:
                 raise ValueError("A student who submitted work cannot be marked absent (11).")
             return Decimal(0)
-        if not submitted:
-            raise ValueError("Without a submission, use special mark 11 (absent) or 12 (banned).")
+        if not submitted and score != 0:
+            raise ValueError("Missing work can only receive zero or a special mark.")
         if not Decimal(0) <= score <= max_score:
             raise ValueError(f"The score must be between 0 and {max_score}.")
         return score

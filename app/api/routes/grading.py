@@ -2,17 +2,18 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Response
 
-from app.api.dependencies import ActorDep, GradingServiceDep, MutationActorDep
+from app.api.dependencies import ActorDep, GradingServiceDep, MutationActorDep, VersionDep
 from app.api.schemas.grading import (
     AssignmentGradeRecords,
     Gradebook,
-    GradeItem,
+    GradebookWeights,
     GradeRecord,
     GradeRelease,
     GradeReport,
     GradeRequest,
     MissingWorkRequest,
     MyGrades,
+    PublishGradeRequest,
 )
 from app.domain.entities import SpecialMark
 
@@ -54,7 +55,7 @@ def get_student_grades(
 @router.post(
     "/submissions/{submissionId}/grade-record",
     operation_id="createInitialGrade",
-    response_model=GradeItem,
+    response_model=GradeRecord,
     summary="Professor saves a draft grade (score or special mark 11/12) for a submission.",
     responses={422: {"description": "INVALID_GRADE"}},
 )
@@ -70,13 +71,17 @@ def create_initial_grade(
         score=body.score,
         special_mark=_mark(body.specialMark),
         feedback=body.feedback,
+        expected_submission_version=body.expectedSubmissionVersion,
+        source_version_no=body.sourceVersionNo,
+        reason=body.reason,
+        zero_reason=body.zeroReason,
     )
 
 
 @router.post(
     "/assignments/{assignmentId}/missing-work-decisions",
     operation_id="confirmMissingWork",
-    response_model=GradeItem,
+    response_model=GradeRecord,
     summary="Professor gives a student who did not submit a special mark (11 absent, 12 banned).",
     responses={409: {"description": "ALREADY_SUBMITTED"}},
 )
@@ -90,8 +95,9 @@ def confirm_missing_work(
         actor=actor,
         assignment_id=assignment_id,
         student_id=body.studentId,
-        special_mark=SpecialMark(body.specialMark),
+        special_mark=_mark(body.specialMark),
         feedback=body.feedback,
+        zero_reason=body.zeroReason,
     )
 
 
@@ -113,8 +119,17 @@ def release_grades(
     response_model=Gradebook,
     summary="Class professor: every student x every grade item, with totals.",
 )
-def get_course_gradebook(offering_id: OfferingId, actor: ActorDep, service: GradingServiceDep):
-    return service.get_gradebook(actor=actor, offering_id=offering_id)
+def get_course_gradebook(
+    offering_id: OfferingId,
+    actor: ActorDep,
+    service: GradingServiceDep,
+    search: str | None = None,
+    state: str = "ALL",
+    activityId: int | None = None,
+):
+    return service.get_gradebook(
+        actor=actor, offering_id=offering_id, search=search, state=state, activity_id=activityId
+    )
 
 
 @router.get(
@@ -124,8 +139,17 @@ def get_course_gradebook(offering_id: OfferingId, actor: ActorDep, service: Grad
     summary="Class professor: the gradebook as a CSV file (special grades as 11 / 12).",
     responses={200: {"content": {"text/csv": {"schema": {"type": "string"}}}}},
 )
-def export_gradebook_csv(offering_id: OfferingId, actor: ActorDep, service: GradingServiceDep):
-    name, text = service.export_gradebook_csv(actor=actor, offering_id=offering_id)
+def export_gradebook_csv(
+    offering_id: OfferingId,
+    actor: ActorDep,
+    service: GradingServiceDep,
+    search: str | None = None,
+    state: str = "ALL",
+    activityId: int | None = None,
+):
+    name, text = service.export_gradebook_csv(
+        actor=actor, offering_id=offering_id, search=search, state=state, activity_id=activityId
+    )
     return Response(
         content="\ufeff" + text,  # BOM so Excel reads accents correctly
         media_type="text/csv; charset=utf-8",
@@ -172,13 +196,19 @@ def create_grade_revision(
     body: GradeRequest,
     actor: MutationActorDep,
     service: GradingServiceDep,
+    version: VersionDep,
 ):
     return service.revise(
         actor=actor,
         grade_record_id=grade_id,
+        expected_version=version,
         score=body.score,
         special_mark=_mark(body.specialMark),
         feedback=body.feedback,
+        expected_submission_version=body.expectedSubmissionVersion,
+        source_version_no=body.sourceVersionNo,
+        reason=body.reason,
+        zero_reason=body.zeroReason,
     )
 
 
@@ -189,6 +219,33 @@ def create_grade_revision(
     summary="Release this one grade now (the rest of the assignment stays draft).",
 )
 def publish_grade_revision(
-    grade_id: GradeRecordId, actor: MutationActorDep, service: GradingServiceDep
+    grade_id: GradeRecordId,
+    body: PublishGradeRequest,
+    version: VersionDep,
+    actor: MutationActorDep,
+    service: GradingServiceDep,
 ):
-    return service.publish(actor=actor, grade_record_id=grade_id)
+    return service.publish(
+        actor=actor, grade_record_id=grade_id, expected_version=version, revision_no=body.revisionNo
+    )
+
+
+@router.put(
+    "/offerings/{offeringId}/gradebook/weights",
+    operation_id="updateGradebookWeights",
+    status_code=204,
+)
+def update_weights(
+    offering_id: OfferingId,
+    body: GradebookWeights,
+    actor: MutationActorDep,
+    version: VersionDep,
+    service: GradingServiceDep,
+):
+    service.update_weights(
+        actor=actor,
+        offering_id=offering_id,
+        expected_version=version,
+        values=[v.model_dump() for v in body.values],
+    )
+    return Response(status_code=204)

@@ -8,16 +8,16 @@ from app.infrastructure.db.sql import Sql
 # One row per assignment of the class, with this student's submission, the current
 # draft revision and the released (published) revision.
 _REPORT_SELECT = """SELECT a.activity_id, a.title, a.max_score, a.weight_pct, x.due_at,
-        s.submission_id, s.status AS submission_status,
+        s.submission_id, s.group_id, s.status AS submission_status,
         g.grade_id, g.draft_revision_no, g.published_revision_no, g.published_at,
         dr.score AS draft_score, dr.special_mark AS draft_mark, dr.feedback AS draft_feedback,
         pr.score AS released_score, pr.special_mark AS released_mark,
         pr.feedback AS released_feedback
     FROM activities AS a
     JOIN assignments AS x ON x.activity_id = a.activity_id
-    LEFT JOIN group_members AS gm ON gm.assignment_id = a.activity_id AND gm.student_id = %s
+    LEFT JOIN (SELECT r.submission_id,r.student_id,sx.assignment_id FROM submission_roster r JOIN submissions sx ON sx.submission_id=r.submission_id) AS gm ON gm.assignment_id=a.activity_id AND gm.student_id = %s
     LEFT JOIN submissions AS s ON s.assignment_id = a.activity_id
-        AND (s.student_id = %s OR s.group_id = gm.group_id)
+        AND (s.student_id = %s OR s.submission_id = gm.submission_id)
     LEFT JOIN grades AS g ON g.submission_id = s.submission_id
     LEFT JOIN grade_revisions AS dr
         ON dr.grade_id = g.grade_id AND dr.revision_no = g.draft_revision_no
@@ -92,7 +92,7 @@ class GradingRepository:
     # ------------------------------------------------------------ saving grades
     def lock_grade(self, submission_id: int) -> dict[str, Any] | None:
         return self.sql.one(
-            "SELECT grade_id, draft_revision_no FROM grades WHERE submission_id = %s FOR UPDATE",
+            "SELECT grade_id, draft_revision_no, published_revision_no, version FROM grades WHERE submission_id = %s FOR UPDATE",
             submission_id,
         )
 
@@ -109,6 +109,8 @@ class GradingRepository:
         special_mark: str | None,
         feedback: str | None,
         revised_by: int,
+        reason: str | None = None,
+        zero_reason: str | None = None,
     ) -> int:
         """Store a new revision and make it the draft. Returns its number."""
         number = (
@@ -122,8 +124,8 @@ class GradingRepository:
         self.sql.execute(
             """INSERT INTO grade_revisions (grade_id, revision_no, submission_id,
                    source_version_no, score, special_mark, feedback, is_missing_zero,
-                   zero_reason, revised_by)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   zero_reason, revised_by, reason)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             grade_id,
             number,
             submission_id,
@@ -132,8 +134,9 @@ class GradingRepository:
             special_mark,
             feedback,
             missing,
-            special_mark if missing else None,
+            zero_reason if missing else None,
             revised_by,
+            reason,
         )
         self.sql.execute(
             "UPDATE grades SET draft_revision_no = %s, version = version + 1 WHERE grade_id = %s",
@@ -172,7 +175,7 @@ class GradingRepository:
     def revisions(self, grade_id: int) -> list[dict[str, Any]]:
         """Every saved version of the grade, newest first (the edit history)."""
         return self.sql.all(
-            """SELECT r.revision_no, r.score, r.special_mark, r.feedback, r.revised_at,
+            """SELECT r.revision_no, r.score, r.special_mark, r.feedback, r.revised_at, r.source_version_no, r.reason, r.zero_reason, r.is_missing_zero,
                       r.revised_by, u.full_name AS revised_by_name
                FROM grade_revisions AS r JOIN users AS u ON u.user_id = r.revised_by
                WHERE r.grade_id = %s ORDER BY r.revision_no DESC""",

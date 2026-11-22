@@ -1,12 +1,11 @@
 """Grade report page (same for student and professor) and the grade boxes."""
 
-from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from app.api.schemas.common import Id, RequestModel, ResponseModel
+from app.api.schemas.common import Id, Instant, RequestModel, ResponseModel, Version
 
 SpecialMarkName = Literal["ABSENT", "BANNED"]  # school codes 11 and 12, both count as 0
 Feedback = Annotated[str, Field(max_length=10000)]
@@ -18,6 +17,10 @@ class GradeRequest(RequestModel):
     score: Annotated[Decimal, Field(ge=0, max_digits=6, decimal_places=2)] | None = None
     specialMark: SpecialMarkName | None = None
     feedback: Feedback | None = None
+    reason: Annotated[str, Field(min_length=1, max_length=1000)] | None = None
+    zeroReason: Annotated[str, Field(min_length=1, max_length=1000)] | None = None
+    expectedSubmissionVersion: Annotated[int, Field(ge=0)]
+    sourceVersionNo: Version | None
 
     @model_validator(mode="after")
     def one_of(self):
@@ -28,8 +31,13 @@ class GradeRequest(RequestModel):
 
 class MissingWorkRequest(RequestModel):
     studentId: Id
-    specialMark: SpecialMarkName
+    specialMark: SpecialMarkName | None = None
+    zeroReason: Annotated[str, Field(min_length=1, max_length=1000)]
     feedback: Feedback | None = None
+
+
+class PublishGradeRequest(RequestModel):
+    revisionNo: Version
 
 
 class GradeItem(ResponseModel):
@@ -48,7 +56,9 @@ class GradeItem(ResponseModel):
     status: Literal["NOT_GRADED", "DRAFT", "RELEASED"]
     submitted: bool
     submissionId: Id | None
+    state: str
     gradeId: Id | None
+    groupId: Id | None
 
 
 class GradeTotal(ResponseModel):
@@ -56,6 +66,9 @@ class GradeTotal(ResponseModel):
     rangeMax: float
     grade: float | None
     percentage: float | None
+    final: bool
+    totalWeight: float
+    availableWeight: float
 
 
 class GradeStudent(ResponseModel):
@@ -97,6 +110,9 @@ class GradebookRow(ResponseModel):
 
 
 class Gradebook(ResponseModel):
+    version: int
+    writable: bool
+    serverNow: Instant
     offeringId: Id
     courseCode: str
     title: str
@@ -114,21 +130,28 @@ class Reviser(ResponseModel):
 
 class GradeRevision(ResponseModel):
     revisionNo: int
+    sourceVersionNo: int | None
+    reason: str | None
+    zeroReason: str | None
+    isMissingZero: bool
     grade: float
     specialMark: SpecialMarkName | None
     specialCode: Literal[11, 12] | None
     feedback: str | None
     revisedBy: Reviser
-    revisedAt: datetime
+    revisedAt: Instant
 
 
-class GradeRecord(ResponseModel):
+class GradeRecord(GradeItem):
     id: Id
     submissionId: Id
     assignmentId: Id
+    publishedAt: Instant | None
     studentIds: list[Id]
     status: Literal["DRAFT", "RELEASED"]
     current: GradeRevision = Field(description="Professor: the draft. Student: the released one")
+    draftRevision: GradeRevision | None
+    publishedRevision: GradeRevision | None
     released: GradeRevision | None
     revisions: list[GradeRevision] | None = Field(description="Edit history, professor only")
     version: int
@@ -140,7 +163,21 @@ class StudentGradeRow(ResponseModel):
 
 
 class AssignmentGradeRecords(ResponseModel):
+    subjects: list[dict]
+    canGrade: bool
+    serverNow: Instant
+    subjectType: Literal["STUDENT", "GROUP"]
     assignmentId: Id
     title: str
     maxScore: float
     items: list[StudentGradeRow]
+
+
+class ActivityWeight(RequestModel):
+    id: Id
+    kind: Literal["ASSIGNMENT", "QUIZ"]
+    weight: Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
+
+
+class GradebookWeights(RequestModel):
+    values: list[ActivityWeight]
