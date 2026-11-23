@@ -18,12 +18,13 @@ from app.api.schemas.catalog import (
     RegistrationPage,
     ReviewRegistrationRequest,
 )
-from app.api.schemas.common import ActionResult
 from app.api.schemas.identity import (
     AccountPage,
     AdminAccountUpdateRequest,
     CreateAccountRequest,
+    IssuedAccount,
     MeView,
+    PasswordResetResult,
     ResetPasswordRequest,
 )
 from app.api.schemas.reports import AdminClassPage, AuditPage
@@ -57,7 +58,7 @@ def admin_list_accounts(
     "/admin/accounts",
     operation_id="adminCreateAccount",
     status_code=201,
-    response_model=MeView,
+    response_model=IssuedAccount,
     responses={409: {"description": "EMAIL_TAKEN"}},
 )
 def admin_create_account(
@@ -70,6 +71,7 @@ def admin_create_account(
         role=body.role,
         can_create_course=body.canCreateCourse,
     )
+    response.headers["Cache-Control"] = "no-store"
     set_etag(response, view["version"])
     return view
 
@@ -213,12 +215,14 @@ def admin_list_audit_entries(
 @router.post(
     "/admin/accounts/{accountId}/password-reset",
     operation_id="adminResetPassword",
-    response_model=ActionResult,
+    response_model=PasswordResetResult,
 )
 def admin_reset_password(
     account_id: AccountId,
     body: ResetPasswordRequest,
+    response: Response,
     actor: MutationActorDep,
     service: AuthServiceDep,
 ):
+    response.headers["Cache-Control"] = "no-store"
     return service.reset_password(actor=actor, account_id=account_id, reason=body.reason)

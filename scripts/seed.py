@@ -1,49 +1,88 @@
+import argparse
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.core.config import Settings
+from app.core.security import hash_password
 from app.domain.entities import CourseRole
 from app.infrastructure.db.connection import MySQLDatabase, connection_options
 from app.infrastructure.db.repositories.assessment_repository import AssessmentRepository
+from app.infrastructure.db.repositories.audit_repository import AuditRepository
 from app.infrastructure.db.repositories.content_repository import ContentRepository
 from app.infrastructure.db.repositories.course_repository import CourseRepository
 from app.infrastructure.db.repositories.identity_repository import IdentityRepository
 from app.infrastructure.db.sql import Sql
-from app.services.auth_service import AuthService
 
-PASSWORD = "ElioDemo@2026"
+# Deliberately weak credentials are confined to the development seed.
+PASSWORD = "12345678"
+DEMO_ACCOUNTS = [
+    ("admin@gmail.com", "admin@elio.local", "Quản trị viên", "ADMIN"),
+    ("teacher@gmail.com", "teacher@elio.local", "Giảng viên mẫu", "INSTRUCTOR"),
+    ("student@gmail.com", "student@elio.local", "Sinh viên mẫu", "STUDENT"),
+    ("teacher2@gmail.com", "teacher2@elio.local", "Demo Co-instructor", "INSTRUCTOR"),
+    ("student2@gmail.com", "student2@elio.local", "Demo Student B", "STUDENT"),
+]
 
 
-def seed(database: MySQLDatabase):
-    name = connection_options(database.settings.database_url.get_secret_value())["database"]
-    if not name.endswith("_dev"):
-        raise RuntimeError("Sample data requires a database name ending in _dev.")
-    auth = AuthService(database, database.settings)
+def _seed_accounts(sql, *, reset_demo_credentials=False):
+    repo = IdentityRepository(sql)
     accounts = {}
-    for email, display_name, role in [
-        ("admin@elio.local", "Quản trị viên", "ADMIN"),
-        ("teacher@elio.local", "Giảng viên mẫu", "INSTRUCTOR"),
-        ("student@elio.local", "Sinh viên mẫu", "STUDENT"),
-    ]:
-        with database.read_connection() as connection:
-            existing = IdentityRepository(Sql(connection)).find_by_email(email)
-            admin_id = IdentityRepository(Sql(connection)).first_admin_id()
+    for email, legacy, display_name, role in DEMO_ACCOUNTS:
+        existing = repo.find_by_email(email)
+        old = repo.find_by_email(legacy)
+        if existing and old and reset_demo_credentials:
+            raise RuntimeError(
+                f"Both {email} and {legacy} exist; resolve the duplicate before reset."
+            )
+        existing = existing or old
         if existing:
             if existing["role"] != role:
                 raise RuntimeError(f"Sample account {email} has a different role.")
-            accounts[role] = existing["user_id"]
-        elif role == "ADMIN" and admin_id is None:
-            accounts[role] = auth.bootstrap_admin(
-                email=email, display_name=display_name, password=PASSWORD
-            )
+            user_id = existing["user_id"]
+            if reset_demo_credentials:
+                sql.execute("UPDATE users SET email=%s WHERE user_id=%s", email, user_id)
+                repo.update_password(user_id, hash_password(PASSWORD), must_change=False)
+                repo.revoke_all_sessions(user_id)
+                AuditRepository(sql).record(
+                    actor_id=repo.first_admin_id(),
+                    action="DEMO_CREDENTIALS_RESET",
+                    target_type="ACCOUNT",
+                    target_id=user_id,
+                    reason="Operator reset of named development sample credentials",
+                )
         else:
-            accounts[role] = auth.create_account_with_password(
+            # Seed-only insertion avoids weakening ordinary signup/change-password rules.
+            user_id = repo.insert_user(
                 email=email,
-                display_name=display_name,
+                full_name=display_name,
+                password_hash=hash_password(PASSWORD),
                 role=role,
-                password=PASSWORD,
-                can_create_course=role == "INSTRUCTOR",
+                must_change_pwd=False,
+                created_by=repo.first_admin_id(),
             )
+            if role == "ADMIN":
+                repo.insert_admin(user_id)
+            elif role == "INSTRUCTOR":
+                repo.insert_instructor(user_id, email == "teacher@gmail.com")
+            else:
+                repo.insert_student(user_id)
+            AuditRepository(sql).record(
+                actor_id=repo.first_admin_id(),
+                action="ACCOUNT_CREATED",
+                target_type="ACCOUNT",
+                target_id=user_id,
+                details={"via": "development_seed"},
+            )
+        accounts.setdefault(role, user_id)
+    return accounts
+
+
+def seed(database: MySQLDatabase, *, reset_demo_credentials=False):
+    name = connection_options(database.settings.database_url.get_secret_value())["database"]
+    if not name.endswith("_dev") or database.settings.environment != "development":
+        raise RuntimeError("Sample data requires development mode and a database ending in _dev.")
+    with database.transaction() as connection:
+        accounts = _seed_accounts(Sql(connection), reset_demo_credentials=reset_demo_credentials)
     with database.transaction() as connection:
         sql = Sql(connection)
         courses = CourseRepository(sql)
@@ -120,8 +159,17 @@ def seed(database: MySQLDatabase):
                         "cutoffAt": now + timedelta(days=8),
                     },
                 )
-    print("Sample accounts and four classes are available. See README for local demo credentials.")
+    print(
+        "Five sample accounts and four classes are available. See README for local demo credentials."
+    )
 
 
 if __name__ == "__main__":
-    seed(MySQLDatabase(Settings()))
+    parser = argparse.ArgumentParser(description="Seed development sample accounts/classes.")
+    parser.add_argument(
+        "--reset-demo-credentials",
+        action="store_true",
+        help="Rename the five named legacy sample emails and reset their passwords; revokes their sessions.",
+    )
+    args = parser.parse_args()
+    seed(MySQLDatabase(Settings()), reset_demo_credentials=args.reset_demo_credentials)

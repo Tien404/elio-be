@@ -239,7 +239,7 @@
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/MeView"
+              "$ref": "#/components/schemas/IssuedAccount"
             }
           }
         }
@@ -1194,7 +1194,7 @@
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/ActionResult"
+              "$ref": "#/components/schemas/PasswordResetResult"
             }
           }
         }

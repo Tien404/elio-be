@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from app.api.schemas.common import (
+    ActionResult,
     Email,
     Id,
     Instant,
@@ -39,6 +40,14 @@ class MeView(ResponseModel):
     email: str
     canCreateCourse: bool
     version: Version
+
+
+class IssuedAccount(MeView):
+    temporaryPassword: str
+
+
+class PasswordResetResult(ActionResult):
+    temporaryPassword: str
 
 
 class AccountPage(PageMeta):

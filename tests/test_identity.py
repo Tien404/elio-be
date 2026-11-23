@@ -77,7 +77,7 @@ def test_temporary_password_session_is_restricted_until_changed(api):
     assert created.json()["account"]["mustChangePassword"] is True
     account_id = created.json()["account"]["id"]
     temp = temp_password(api, account_id)
-    assert temp not in created.text  # temporary password only goes to the delivery channel
+    assert created.json()["temporaryPassword"] == temp  # shown once in the admin issuance response
 
     first = login(api, "stu@elio.test", temp)
     assert first.body["restricted"] is True

@@ -47,13 +47,14 @@ Không commit `.env` hoặc dữ liệu private. Backend dùng PyMySQL, không c
 `python -m scripts.migrate` áp dụng các file `sql/migrations` theo thứ tự và bỏ qua migration đã ghi nhận.
 Với database đã có dữ liệu, sao lưu trước khi nâng cấp rồi chạy cùng lệnh migrate; không cần xóa schema.
 MySQL DDL không rollback toàn bộ migration; nếu áp dụng bị lỗi, kiểm tra schema trước khi chạy tiếp.
-Dữ liệu mẫu chỉ chạy với database có tên kết thúc bằng `_dev`; chạy lại không đặt lại mật khẩu hoặc tạo trùng lớp mẫu.
 
 | Tài khoản mẫu        | Mật khẩu khi tạo mới |
 | -------------------- | -------------------- |
-| `admin@elio.local`   | `ElioDemo@2026`      |
-| `teacher@elio.local` | `ElioDemo@2026`      |
-| `student@elio.local` | `ElioDemo@2026`      |
+| `admin@gmail.com`    | `12345678`           |
+| `teacher@gmail.com`  | `12345678`           |
+| `student@gmail.com`  | `12345678`           |
+| `teacher2@gmail.com` | `12345678`           |
+| `student2@gmail.com` | `12345678`           |
 
 Seed tạo bốn lớp Open (CS1001, CS2001, CS2002, CS2003), học liệu TEXT và bài tập có hạn nộp tương đối với ngày tạo. Join codes lần lượt: `ELIO26`, `SQL261`, `WEB261`, `TST261`. Chạy lại seed giữ nguyên dữ liệu và mật khẩu hiện có.
 Các tài khoản/mật khẩu này chỉ dùng cho dev local.

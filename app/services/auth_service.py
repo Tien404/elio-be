@@ -313,7 +313,7 @@ class AuthService:
                     "EMAIL_TAKEN", "An account with this email already exists."
                 ) from None
             raise
-        return view
+        return {**view, "temporaryPassword": password}
 
     def update_account(
         self,
@@ -390,7 +390,7 @@ class AuthService:
             self.outbox.deliver(
                 account_id=account_id, email=account["email"], temporary_password=password
             )
-        return {"status": "COMPLETED", "resourceId": account_id}
+        return {"status": "COMPLETED", "resourceId": account_id, "temporaryPassword": password}
 
     def admin_list_accounts(
         self,

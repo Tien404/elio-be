@@ -197,7 +197,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MeView"
+                  "$ref": "#/components/schemas/IssuedAccount"
                 }
               }
             }
@@ -872,7 +872,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ActionResult"
+                  "$ref": "#/components/schemas/PasswordResetResult"
                 }
               }
             }
@@ -10860,6 +10860,40 @@
         ],
         "title": "InboxView"
       },
+      "IssuedAccount": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountSummary"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "canCreateCourse": {
+            "type": "boolean",
+            "title": "Cancreatecourse"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "temporaryPassword": {
+            "type": "string",
+            "title": "Temporarypassword"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account",
+          "email",
+          "canCreateCourse",
+          "version",
+          "temporaryPassword"
+        ],
+        "title": "IssuedAccount"
+      },
       "JoinCodeRequest": {
         "properties": {
           "code": {
@@ -11340,6 +11374,43 @@
           "items"
         ],
         "title": "OfferingPage"
+      },
+      "PasswordResetResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACCEPTED",
+              "COMPLETED"
+            ],
+            "title": "Status"
+          },
+          "resourceId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resourceid"
+          },
+          "temporaryPassword": {
+            "type": "string",
+            "title": "Temporarypassword"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "resourceId",
+          "temporaryPassword"
+        ],
+        "title": "PasswordResetResult"
       },
       "Person": {
         "properties": {
