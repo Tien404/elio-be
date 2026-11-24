@@ -35,7 +35,7 @@ def _money(value: Decimal) -> float:
 
 def grade_item(row: dict[str, Any], *, teacher: bool) -> dict[str, Any]:
     """One grade-report row. The professor sees the current draft, students the released one."""
-    if teacher:
+    if teacher and row["draft_revision_no"] is not None:
         score, mark, feedback = row["draft_score"], row["draft_mark"], row["draft_feedback"]
     else:
         score, mark, feedback = (
@@ -43,9 +43,13 @@ def grade_item(row: dict[str, Any], *, teacher: bool) -> dict[str, Any]:
             row["released_mark"],
             row["released_feedback"],
         )
-    if row["grade_id"] is None or (not teacher and row["published_revision_no"] is None):
+    if row["grade_id"] is None or (
+        row["published_revision_no"] is None and (not teacher or row["draft_revision_no"] is None)
+    ):
         status = "NOT_GRADED"
-    elif row["draft_revision_no"] == row["published_revision_no"]:
+    elif row["published_revision_no"] is not None and (
+        row["draft_revision_no"] is None or row["draft_revision_no"] == row["published_revision_no"]
+    ):
         status = "RELEASED"
     else:
         status = "DRAFT" if teacher else "RELEASED"  # students only ever see released grades
@@ -770,6 +774,7 @@ class GradingService:
         revisions = {r["revision_no"]: r for r in repo.revisions(grade_id)}
         released = revisions.get(grade["published_revision_no"])
         draft = revisions.get(grade["draft_revision_no"])
+        draft_view = _revision_view(draft) if draft else None
         assignment = AssessmentRepository(sql).get_assignment(grade["assignment_id"])
         item_rows = repo.report_rows(
             grade["offering_id"], students[0], assignment_id=assignment["activity_id"]
@@ -787,10 +792,10 @@ class GradingService:
                 "publishedAt": grade["published_at"],
                 "studentIds": students,
                 "status": "RELEASED"
-                if not teacher or grade["draft_revision_no"] == grade["published_revision_no"]
+                if not teacher or (released and (not draft or draft == released))
                 else "DRAFT",
-                "current": _revision_view(draft) if teacher else publication,
-                "draftRevision": _revision_view(draft) if teacher else None,
+                "current": (draft_view or publication) if teacher else publication,
+                "draftRevision": draft_view if teacher else None,
                 "publishedRevision": publication,
                 "released": publication,
                 "revisions": [_revision_view(r) for r in revisions.values()] if teacher else None,

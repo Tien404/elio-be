@@ -1,5 +1,7 @@
 """Group assignments: forming groups, handing in for the group, grading the group."""
 
+from app.infrastructure.db.sql import Sql
+from scripts.migrate import apply_migrations
 from tests.helpers import class_with_student, create_user
 from tests.test_grading import _enroll_outsider, _grade, _page, _release
 from tests.test_submissions import _box, _submit, _upload
@@ -7,6 +9,48 @@ from tests.test_submissions import _box, _submit, _upload
 
 def _group_box(c, size=2, **extra):
     return _box(c, mode="GROUP", maxGroupSize=size, **extra)
+
+
+def test_upgrade_repairs_missing_group_size_without_hiding_unsubmitted_work(api, database):
+    c = class_with_student(api)
+    legacy = _group_box(c)
+    empty = _group_box(c)
+    configured = _group_box(c, size=2)
+    _create(c.student, legacy, "Existing team")
+    with database.transaction() as connection:
+        sql = Sql(connection)
+        sql.execute(
+            """ALTER TABLE assignments DROP CHECK CK_assignments_group_size,
+            ADD CONSTRAINT CK_assignments_group_size CHECK (
+                (is_group_work = 0 AND max_group_size IS NULL)
+                OR (is_group_work = 1 AND max_group_size BETWEEN 1 AND 20))"""
+        )
+        sql.execute(
+            "UPDATE assignments SET max_group_size=NULL WHERE activity_id IN (%s,%s)",
+            legacy["id"],
+            empty["id"],
+        )
+        sql.execute("DELETE FROM schema_migrations WHERE migration_id='013_required_group_size'")
+    try:
+        apply_migrations(database)
+        apply_migrations(database)
+        for box in (legacy, empty):
+            for user in (c.student, c.prof):
+                assert _groups(user, box)["maxGroupSize"] == 4
+            response = c.student.get(f"/api/v1/assignments/{box['id']}/submissions/me")
+            assert response.status_code == 404 and response.json()["code"] == "NOT_SUBMITTED"
+        assert _groups(c.student, legacy)["items"][0]["maxSize"] == 4
+        assert _groups(c.student, configured)["maxGroupSize"] == 2
+        import pytest
+
+        with pytest.raises(Exception, match="CK_assignments_group_size"):
+            with database.transaction() as connection:
+                Sql(connection).execute(
+                    "UPDATE assignments SET max_group_size=NULL WHERE activity_id=%s",
+                    legacy["id"],
+                )
+    finally:
+        apply_migrations(database)
 
 
 def _groups(user, box):

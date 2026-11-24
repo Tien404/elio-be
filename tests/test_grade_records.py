@@ -110,3 +110,61 @@ def test_receipt_lookup_and_repeat_safe_hand_in(api):
     from tests.test_main_adaptation import test_original_receipt_replay_and_changed_payload
 
     test_original_receipt_replay_and_changed_payload(api)
+
+
+def test_published_grade_without_draft_pointer_is_readable_and_can_be_corrected(api, database):
+    from app.infrastructure.db.sql import Sql
+
+    c = class_with_student(api)
+    box, submission_id = _submitted(c)
+    _grade(c.prof, submission_id, score=9)
+    grade_id = _records(c, box)["Stu"]["gradeId"]
+    url = f"/api/v1/grade-records/{grade_id}"
+    record = c.prof.get(url).json()
+    published = c.prof.put(f"{url}/publication", json={"revisionNo": 1}, version=record["version"])
+    assert published.status_code == 200, published.text
+    # Earlier releases clear the draft pointer after publication, retaining the revision.
+    with database.transaction() as connection:
+        Sql(connection).execute(
+            "UPDATE grades SET draft_revision_no=NULL WHERE grade_id=%s", grade_id
+        )
+    for user in (c.prof, c.student):
+        response = user.get(url)
+        assert response.status_code == 200, response.text
+        record = response.json()
+        assert record["status"] == "RELEASED" and record["state"] == "PUBLISHED"
+        assert record["current"]["grade"] == record["publishedRevision"]["grade"] == 9
+        assert record["draftRevision"] is None
+        history = user.get(f"/api/v1/submissions/{submission_id}/history")
+        assert history.status_code == 200, history.text
+    assert _records(c, box)["Stu"]["grade"] == 9
+    for user in (c.prof, c.student):
+        gradebook = user.get(
+            f"/api/v1/offerings/{c.offering_id}/students/{c.student.account_id}/grades"
+        )
+        assert gradebook.status_code == 200, gradebook.text
+        assert gradebook.json()["items"][0]["grade"] == 9
+    version = c.prof.get(url).json()["version"]
+    revised = c.prof.post(
+        f"{url}/revisions",
+        json={
+            "score": 0,
+            "expectedSubmissionVersion": 1,
+            "sourceVersionNo": 1,
+            "reason": "Rechecked work",
+        },
+        version=version,
+    )
+    assert revised.status_code == 201, revised.text
+    correction = revised.json()
+    assert correction["state"] == "CORRECTION_DRAFT"
+    assert correction["draftRevision"]["grade"] == 0
+    assert correction["publishedRevision"]["grade"] == 9
+    assert c.student.get(url).json()["current"]["grade"] == 9
+    published = c.prof.put(
+        f"{url}/publication",
+        json={"revisionNo": correction["draftRevision"]["revisionNo"]},
+        version=correction["version"],
+    )
+    assert published.status_code == 200, published.text
+    assert c.student.get(url).json()["current"]["grade"] == 0

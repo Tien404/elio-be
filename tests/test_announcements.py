@@ -86,3 +86,58 @@ def test_mark_read(api):
     inbox = _inbox(c.student)
     assert inbox["unreadCount"] == 0 and inbox["items"][0]["read"] is True
     assert _inbox(c.student, unreadOnly=True)["items"] == []
+
+
+def test_legacy_notification_events_keep_inbox_contract_and_read_state(api, database):
+    from app.infrastructure.db.repositories.notification_repository import NotificationRepository
+    from app.infrastructure.db.sql import Sql
+    from app.services.notification_service import MESSAGES
+
+    c = class_with_student(api)
+    box = _box(c)
+    announcement = c.prof.post(
+        f"/api/v1/offerings/{c.offering_id}/announcements",
+        json={"title": "Current announcement", "body": "Class update"},
+    ).json()
+    legacy = {
+        "ANNOUNCEMENT_PUBLISHED": ("ANNOUNCEMENT", "ANNOUNCEMENT", announcement["id"]),
+        "ASSIGNMENT_DEADLINE_CHANGED": ("DUE_DATE_CHANGED", "ASSIGNMENT", box["id"]),
+        "ASSIGNMENT_GRADE_PUBLISHED": ("GRADES_RELEASED", "ASSIGNMENT", box["id"]),
+        "ASSIGNMENT_GRADE_UPDATED": ("GRADES_RELEASED", "ASSIGNMENT", box["id"]),
+    }
+    with database.transaction() as connection:
+        repo = NotificationRepository(Sql(connection))
+        for event, (_, target_type, target_id) in legacy.items():
+            repo.insert_notification(
+                recipient_id=c.student.account_id,
+                actor_id=c.prof.account_id,
+                offering_id=c.offering_id,
+                event_type=event,
+                message="Historical notification",
+                target_type=target_type,
+                target_id=target_id,
+                event_key=f"legacy:{event}",
+            )
+    inbox = _inbox(c.student)
+    assert inbox["items"] == inbox["rows"]["items"]
+    assert inbox["unreadCount"] == inbox["unread"] == inbox["totalItems"] == 6
+    for event, (canonical, _, _) in legacy.items():
+        item = next(item for item in inbox["items"] if item["event"] == event)
+        assert item["eventType"] == canonical
+        assert item["preview"] == item["message"] == MESSAGES[canonical]
+        if canonical == "GRADES_RELEASED":
+            assert item["href"] == f"/results?offeringId={c.offering_id}"
+    page = _inbox(c.student, pageSize=2)
+    assert len(page["items"]) == 2 and page["totalPages"] == 3
+    updated = _inbox(c.student, kind="ASSIGNMENT_GRADE_UPDATED")["items"]
+    assert len(updated) == 1
+    url = f"/api/v1/me/notifications/{updated[0]['id']}/read"
+    assert c.outsider.put(url).status_code == 404
+    assert c.student.put(url).status_code == 204
+    assert _inbox(c.student)["unread"] == 5
+    assert _inbox(c.student, state="READ")["items"][0]["id"] == updated[0]["id"]
+    with database.read_connection() as connection:
+        stored = Sql(connection).all(
+            "SELECT event_type FROM notifications WHERE event_key LIKE 'legacy:%%'"
+        )
+    assert {row["event_type"] for row in stored} == set(legacy)

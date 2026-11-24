@@ -123,6 +123,43 @@ def test_gradebook_and_csv(api):
     assert c.admin.get(f"/api/v1/offerings/{c.offering_id}/gradebook.csv").status_code == 404
 
 
+def test_gradebook_weights_validate_permissions_totals_and_stale_version(api):
+    c = class_with_student(api)
+    assignment, _ = _submitted(c)
+    quiz = _published(c, _true_false())
+    url = f"/api/v1/offerings/{c.offering_id}/gradebook"
+    version = c.prof.get(url).json()["version"]
+    values = [
+        {"id": assignment["id"], "kind": "ASSIGNMENT", "weight": 40},
+        {"id": quiz["id"], "kind": "QUIZ", "weight": 60},
+    ]
+    for actor, status in ((c.student, 403), (c.admin, 404)):
+        assert (
+            actor.put(f"{url}/weights", json={"values": values}, version=version).status_code
+            == status
+        )
+    updated = c.prof.put(f"{url}/weights", json={"values": values}, version=version)
+    assert updated.status_code == 204, updated.text
+    book = c.prof.get(url).json()
+    assert {column["type"]: column["weight"] for column in book["columns"]} == {
+        "ASSIGNMENT": 40,
+        "QUIZ": 60,
+    }
+    stale = c.prof.put(f"{url}/weights", json={"values": values}, version=version)
+    assert stale.status_code == 412, stale.text
+    invalid_total = c.prof.put(
+        f"{url}/weights",
+        json={"values": [values[0], {**values[1], "weight": 59}]},
+        version=book["version"],
+    )
+    assert invalid_total.status_code == 422
+    assert invalid_total.json()["code"] == "INVALID_WEIGHT_TOTAL"
+    missing = c.prof.put(f"{url}/weights", json={"values": values[:1]}, version=book["version"])
+    assert missing.status_code == 422
+    assert missing.json()["code"] == "WEIGHT_SET_MISMATCH"
+    assert c.prof.get(url).json()["version"] == book["version"]
+
+
 def test_progress_counts_what_students_did(api):
     c = class_with_student(api)
     _enroll_outsider(c)

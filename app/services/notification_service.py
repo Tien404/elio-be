@@ -24,6 +24,15 @@ MESSAGES = {
     "LEAD_TRANSFERRED": "The lead instructor changed.",
 }
 
+# Earlier demo data used the frontend event names in the persistence column.
+# Keep the public eventType contract stable without rewriting inbox history.
+LEGACY_EVENT_TYPES = {
+    "ANNOUNCEMENT_PUBLISHED": "ANNOUNCEMENT",
+    "ASSIGNMENT_DEADLINE_CHANGED": "DUE_DATE_CHANGED",
+    "ASSIGNMENT_GRADE_PUBLISHED": "GRADES_RELEASED",
+    "ASSIGNMENT_GRADE_UPDATED": "GRADES_RELEASED",
+}
+
 
 def notify_course(
     sql: Sql,
@@ -129,6 +138,7 @@ class NotificationService:
 
 
 def notification_view(row: dict[str, Any]) -> dict[str, Any]:
+    event_type = LEGACY_EVENT_TYPES.get(row["event_type"], row["event_type"])
     event = {
         "ANNOUNCEMENT": "ANNOUNCEMENT_PUBLISHED",
         "DUE_DATE_CHANGED": "ASSIGNMENT_DEADLINE_CHANGED",
@@ -138,18 +148,18 @@ def notification_view(row: dict[str, Any]) -> dict[str, Any]:
         f"/offerings/{row['offering_id']}/announcements"
         if row["target_type"] == "ANNOUNCEMENT"
         else f"/results?offeringId={row['offering_id']}"
-        if row["target_type"] in {"GRADE", "SUBMISSION"} or row["event_type"] == "GRADES_RELEASED"
+        if row["target_type"] in {"GRADE", "SUBMISSION"} or event_type == "GRADES_RELEASED"
         else f"/{ {'QUIZ': 'quizzes', 'QUIZ_ATTEMPT': 'quiz-attempts', 'ASSIGNMENT': 'assignments'}.get(row['target_type'], 'offerings') }/{row['target_id']}"
     )
     return {
         "event": event,
         "targetKind": row["target_type"],
-        "preview": MESSAGES.get(row["event_type"], "A course update is available."),
+        "preview": MESSAGES.get(event_type, "A course update is available."),
         "status": "READ" if row["is_read"] else "UNREAD",
         "href": href,
         "id": row["notification_id"],
-        "eventType": row["event_type"],
-        "message": MESSAGES.get(row["event_type"], "A course update is available."),
+        "eventType": event_type,
+        "message": MESSAGES.get(event_type, "A course update is available."),
         "offeringId": row["offering_id"],
         "targetType": row["target_type"],
         "targetId": row["target_id"],

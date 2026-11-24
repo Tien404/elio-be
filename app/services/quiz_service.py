@@ -68,27 +68,47 @@ def quiz_from_row(row: dict[str, Any]) -> Quiz:
     )
 
 
+def _option_number(options: list[dict[str, Any]], key: str | None) -> int | None:
+    if key is None:
+        return None
+    for idx, option in enumerate(options, start=1):
+        if option["option_key"] == key:
+            return idx
+    try:
+        return int(key)
+    except (TypeError, ValueError):
+        return None
+
+
 def question_from_frozen(row: dict[str, Any]) -> Question:
-    """A question as frozen at publish (option keys are the numbers 1, 2, ...)."""
+    """A question as frozen at publish (option keys map to 1-based option numbers)."""
+    correct = _option_number(row["options"], row["correct_key"])
+    if correct is None:
+        raise ValueError(f"Unknown correct option key: {row['correct_key']!r}")
     return Question(
         question_id=row["quiz_question_id"],
         text=row["prompt"],
         type=QuestionType(row["question_type"]),
         options=[o["option_text"] for o in row["options"]],
-        correct_option=int(row["correct_key"]),
+        correct_option=correct,
         points=Decimal(row["points"]),
     )
 
 
 def _load_attempt(repo: QuizRepository, row: dict[str, Any]) -> QuizAttempt:
+    option_map = {
+        q["quiz_question_id"]: q["options"] for q in repo.frozen_questions(row["quiz_id"])
+    }
+    answers: dict[int, int] = {}
+    for question_id, answer in repo.answers(row["attempt_id"]).items():
+        number = _option_number(option_map.get(question_id, []), answer.get("selected_key"))
+        if number is not None:
+            answers[question_id] = number
     return QuizAttempt(
         attempt_id=row["attempt_id"],
         started_at=row["started_at"],
         ends_at=row["ends_at"],
-        answers={
-            question_id: int(answer["selected_key"])
-            for question_id, answer in repo.answers(row["attempt_id"]).items()
-        },
+        answers=answers,
         submitted_at=row["submitted_at"],
         score=row["score"],
     )
@@ -406,16 +426,17 @@ class QuizService:
             row = self._running_attempt(sql, actor, attempt_id)
             if row["version"] != expected_version:
                 raise version_conflict(row["version"])
-            question = next(
+            frozen_q = next(
                 (
-                    question_from_frozen(q)
+                    q
                     for q in repo.frozen_questions(row["quiz_id"])
                     if q["quiz_question_id"] == question_id
                 ),
                 None,
             )
-            if question is None:
+            if frozen_q is None:
                 raise not_found("Question")
+            question = question_from_frozen(frozen_q)
             if not 1 <= option <= len(question.options):
                 raise ApiError(422, "INVALID_ANSWER", "Pick one of the question's options.")
             _load_attempt(repo, row).save_answer(question_id, option)
@@ -423,7 +444,7 @@ class QuizService:
                 attempt_id=attempt_id,
                 quiz_id=row["quiz_id"],
                 question_id=question_id,
-                key=str(option),
+                key=frozen_q["options"][option - 1]["option_key"],
                 at=AssessmentRepository(sql).db_now(),
             )
             sql.execute(
